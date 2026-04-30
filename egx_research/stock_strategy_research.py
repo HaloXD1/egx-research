@@ -438,6 +438,14 @@ def simulate_event_driven_strategy(
     portfolio_drawdown_pause_pct = float(
         params.get("portfolio_drawdown_pause_pct", 0.0) or 0.0
     )
+    max_sector_positions = int(params.get("max_sector_positions", 0) or 0)
+    exit_on_market_filter_fail = bool(params.get("exit_on_market_filter_fail", False))
+    market_filter_fail_min_hold_bars = int(
+        params.get("market_filter_fail_min_hold_bars", 1) or 1
+    )
+    market_fail_trail_atr = float(params.get("market_fail_trail_atr", 0.0) or 0.0)
+    min_position_size_mult = float(params.get("min_position_size_mult", 0.0) or 0.0)
+    max_position_size_mult = float(params.get("max_position_size_mult", 2.0) or 2.0)
     move_stop_to_entry_after_partial = bool(
         params.get("move_stop_to_entry_after_partial", False)
     )
@@ -503,7 +511,15 @@ def simulate_event_driven_strategy(
                 position["peak_close"] = max(
                     float(position["peak_close"]), float(prev["close"])
                 )
-                trail_stop = float(position["peak_close"]) - float(params["trail_atr"]) * float(prev["atr"])
+                prev_market_ok = (
+                    True
+                    if market_ok_by_date is None
+                    else bool(market_ok_by_date.get(pd.Timestamp(prev_date), True))
+                )
+                trail_atr = float(params["trail_atr"])
+                if not prev_market_ok and market_fail_trail_atr > 0.0:
+                    trail_atr = min(trail_atr, market_fail_trail_atr)
+                trail_stop = float(position["peak_close"]) - trail_atr * float(prev["atr"])
                 hard_stop = float(position["stop_price"])
                 stop_price = max(hard_stop, trail_stop)
                 reason = None
@@ -511,6 +527,12 @@ def simulate_event_driven_strategy(
                     reason = "target"
                 elif float(prev["low"]) <= stop_price:
                     reason = "stop"
+                elif (
+                    exit_on_market_filter_fail
+                    and not prev_market_ok
+                    and int(position["bars_held"]) >= market_filter_fail_min_hold_bars
+                ):
+                    reason = "market_filter_fail"
                 elif bool(prev.get("signal_fail", False)):
                     reason = "signal_fail"
                 elif int(position["bars_held"]) >= int(params["max_hold_bars"]):
@@ -641,6 +663,15 @@ def simulate_event_driven_strategy(
                 raw_open = open_px.at[date, symbol]
                 if pd.isna(raw_open) or pd.isna(row.get("atr")) or float(row["atr"]) <= 0:
                     continue
+                if max_sector_positions > 0:
+                    sector = str(row.get("sector", "unknown"))
+                    current_sector_positions = sum(
+                        1
+                        for position in positions.values()
+                        if str(position.get("sector", "unknown")) == sector
+                    )
+                    if current_sector_positions >= max_sector_positions:
+                        continue
                 slots_left = max(1, max_positions - len(positions))
                 fill = float(raw_open) * (1.0 + slippage_rate)
                 marked_position_value = 0.0
@@ -649,16 +680,21 @@ def simulate_event_driven_strategy(
                     if pd.notna(price):
                         marked_position_value += float(position["shares"]) * float(price)
                 current_equity = max(cash + marked_position_value, cash)
-                slot_budget = cash / float(slots_left)
+                position_size_mult = float(row.get("position_size_mult", 1.0) or 1.0)
+                position_size_mult = min(
+                    max(position_size_mult, min_position_size_mult),
+                    max_position_size_mult,
+                )
+                slot_budget = cash / float(slots_left) * position_size_mult
                 cap_budget = (
-                    max_position_weight * current_equity
+                    max_position_weight * current_equity * position_size_mult
                     if max_position_weight > 0.0
                     else slot_budget
                 )
                 atr_value = float(row["atr"])
                 stop_distance = max(float(params["stop_atr"]) * atr_value, fill * 0.01)
                 if risk_per_trade_pct > 0.0:
-                    risk_budget = risk_per_trade_pct * current_equity
+                    risk_budget = risk_per_trade_pct * current_equity * position_size_mult
                     risk_budget_notional = risk_budget * fill / stop_distance
                 else:
                     risk_budget_notional = slot_budget
@@ -688,6 +724,7 @@ def simulate_event_driven_strategy(
                     "partial_target_price": fill
                     + float(partial_target_atr) * atr_value,
                     "partial_taken": False,
+                    "sector": str(row.get("sector", "unknown")),
                 }
                 actions.append(
                     {

@@ -94,6 +94,68 @@ def test_event_driven_exit_next_open_and_waits_for_next_setup() -> None:
     assert actions["fee"].gt(0).all()
 
 
+def test_event_driven_position_size_multiplier_scales_buy() -> None:
+    dates = pd.bdate_range("2024-01-01", periods=8)
+    panel = pd.DataFrame(
+        {
+            "date": dates,
+            "symbol": ["AAA"] * len(dates),
+            "holding_name": ["AAA"] * len(dates),
+            "open": [10.0] * len(dates),
+            "high": [11.0] * len(dates),
+            "low": [9.0] * len(dates),
+            "close": [10.0] * len(dates),
+            "volume": [1000] * len(dates),
+            "weight": [1.0] * len(dates),
+        }
+    )
+    features = panel.copy()
+    features["atr"] = 1.0
+    features["rank_score"] = 1.0
+    features["entry_signal"] = False
+    features["signal_fail"] = False
+    features["position_size_mult"] = 0.5
+    features.loc[features["date"] == dates[4], "entry_signal"] = True
+    membership = pd.DataFrame(
+        {
+            "symbol": ["AAA"],
+            "effective_date": [pd.Timestamp("2023-01-01")],
+            "is_member": [True],
+        }
+    )
+    config = StockRotationConfig()
+    config.backtest = BacktestConfig(
+        initial_cash=10_000.0,
+        monthly_contribution=0.0,
+        fee_bps=0.0,
+        slippage_bps=0.0,
+        share_precision=0,
+    )
+    config.portfolio.fixed_buy_fee_egp = 0.0
+
+    sim = simulate_event_driven_strategy(
+        panel=panel,
+        features=features,
+        calendar=pd.Series(dates),
+        membership=membership,
+        config=config,
+        family="rebound",
+        params={
+            "scan_mode": "weekly",
+            "top_n": 1,
+            "max_positions": 1,
+            "target_atr": 10.0,
+            "stop_atr": 1.0,
+            "trail_atr": 10.0,
+            "max_hold_bars": 20,
+            "max_position_weight": 1.0,
+        },
+    )
+
+    buy = sim.actions[sim.actions["action"] == "BUY"].iloc[0]
+    assert buy["value"] == 5000.0
+
+
 def test_news_event_features_do_not_use_future_events() -> None:
     dates = pd.bdate_range("2024-01-01", periods=8)
     panel = pd.DataFrame(
@@ -441,3 +503,62 @@ def test_stock_strategy_robustness_cli_smoke(tmp_path, monkeypatch) -> None:
     assert (run_dir / "strategy_comparison.csv").exists()
     assert (run_dir / "cost_stress.csv").exists()
     assert (run_dir / "robustness_report.md").exists()
+
+
+def test_stock_strategy_v4_cli_smoke(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "data/normalized").mkdir(parents=True)
+    (tmp_path / "data/stock_rotation").mkdir(parents=True)
+
+    etf = make_synthetic_ohlcv(rows=420, seed=53)
+    etf.to_csv(tmp_path / "data/normalized/EGX30_ETF.csv", index=False)
+    index = make_synthetic_ohlcv(rows=420, seed=54)
+    index.to_csv(tmp_path / "data/normalized/EGX30_INDEX.csv", index=False)
+    panel = _panel(["AAA", "BBB", "CCC", "DDD", "EEE"], rows=420)
+    panel.to_csv(tmp_path / "data/stock_rotation/panel.csv", index=False)
+    pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+            "effective_date": [pd.Timestamp("2020-01-01")] * 5,
+            "is_member": [True, True, True, True, True],
+        }
+    ).to_csv(tmp_path / "data/stock_rotation/membership_snapshots.csv", index=False)
+    (tmp_path / "config/stock_rotation_multifactor.yaml").write_text(
+        "\n".join(
+            [
+                "benchmark:",
+                "  etf_symbol_path: data/normalized/EGX30_ETF.csv",
+                "  index_symbol_path: data/normalized/EGX30_INDEX.csv",
+                "storage:",
+                "  root_dir: data/stock_rotation",
+                "backtest:",
+                "  initial_cash: 10000.0",
+                "  monthly_contribution: 1000.0",
+                "selection:",
+                "  method: sector_multifactor",
+                "  require_long_term_trend: true",
+                "  max_drawdown_252: 1.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "stock-strategy-v4",
+            "--config",
+            "config/stock_rotation_multifactor.yaml",
+            "--train-end",
+            "2020-12-31",
+            "--run-id",
+            "strategy-v4-smoke",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    run_dir = Path("runs/strategy-v4-smoke")
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "actions.csv").exists()
+    assert (run_dir / "v4_feature_audit.csv").exists()

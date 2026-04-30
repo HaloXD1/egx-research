@@ -35,6 +35,7 @@
 - Stock report: `egx stock-rotate-report --run-id <run_id>`
 - Stock strategy v2: `egx stock-strategy-v2 --config config/stock_rotation.yaml --run-id <run_id>`
 - Stock strategy v3: `egx stock-strategy-v3 --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
+- Stock strategy v4: `egx stock-strategy-v4 --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
 - Stock strategy robustness: `egx stock-strategy-robustness --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
 - Paper track: `egx paper-track --model-run-id <run_id> --start-date YYYY-MM-DD`
 
@@ -104,9 +105,16 @@
   - v3 final run: `runs/rebound-max5-v3-final-20260430/`
   - v3 variant lab: `runs/rebound-max5-v3-variant-lab-20260430/`
   - v3 robustness pack: `runs/stock-strategy-robustness-v3-20260430/`
-  - current preferred stock strategy: `rebound_max5_v3`
+  - v4 candidate run: `runs/rebound-max5-v4-candidate-20260430/`
+  - v4 labs:
+    - `runs/rebound-max5-v4-variant-lab-20260430/`
+    - `runs/rebound-max5-v4-exposure-lab-20260430/`
+    - `runs/rebound-max5-v4-cost-stress-20260430/`
+  - current preferred stock strategy candidate: `rebound_max5_v4`
   - v3 uses point-in-time sector multifactor rank + ETF/index/breadth regime filter
   - v3 OOS vs v2: higher TWR/CAGR/Sharpe and lower max DD, but lower full-period CAGR
+  - v4 adds future-fundamental cleanup, cost/edge gate, and modest exposure scaling
+  - v4 candidate OOS improves vs v3, but full-period CAGR is lower and x3 cost stress is near ETF
   - robustness caveats: ETF/panel data stale vs index; fundamentals include future filing dates and need QA before live use
 
 ## Notes For Agents

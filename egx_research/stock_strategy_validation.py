@@ -111,6 +111,32 @@ REBOUND_MAX5_V3_PARAMS: dict[str, Any] = {
 }
 
 
+REBOUND_MAX5_V4_PARAMS: dict[str, Any] = {
+    **REBOUND_MAX5_V3_PARAMS,
+    "top_n": 12,
+    "cost_model_trade_notional_egp": 600_000.0,
+    "liquidity_impact_bps_at_100pct_adv": 150.0,
+    "max_liquidity_impact_pct": 0.020,
+    "min_net_edge_pct": 0.025,
+    "min_edge_cost_ratio": 3.0,
+    "v4_base_rank_weight": 1.0,
+    "v4_net_edge_rank_weight": 0.0,
+    "v4_liquidity_rank_weight": 0.0,
+    "v4_low_risk_weight": 0.0,
+    "dynamic_size_min": 1.15,
+    "dynamic_size_max": 1.15,
+    "min_position_size_mult": 1.15,
+    "max_position_size_mult": 1.15,
+    "risk_per_trade_pct": 0.0,
+    "max_sector_positions": 0,
+    "cooldown_bars_after_stop": 0,
+    "market_fail_trail_atr": 0.0,
+    "partial_target_atr": 0.0,
+    "partial_exit_fraction": 0.0,
+    "move_stop_to_entry_after_partial": False,
+}
+
+
 def build_market_regime_filter(
     etf: pd.DataFrame,
     calendar: pd.Series,
@@ -463,6 +489,134 @@ def build_rebound_v3_feature_panel(
         features[column].fillna(0.5).astype(float) * weight
         for column, weight in weights.items()
     ) / total_weight
+    return features, factor_scores
+
+
+def _clean_future_fundamentals_for_run(
+    fundamentals: pd.DataFrame,
+    calendar_end: pd.Timestamp,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if fundamentals.empty:
+        return fundamentals.copy(), {
+            "fundamental_rows_input": 0,
+            "fundamental_rows_used": 0,
+            "future_filing_rows_removed": 0,
+            "future_period_rows_removed": 0,
+        }
+    frame = fundamentals.copy()
+    filing_date = pd.to_datetime(frame["filing_date"], errors="coerce")
+    period_end = pd.to_datetime(frame["period_end"], errors="coerce")
+    future_filing = filing_date > pd.Timestamp(calendar_end)
+    future_period = period_end > pd.Timestamp(calendar_end)
+    used = frame[~future_filing & ~future_period].copy()
+    return used, {
+        "fundamental_rows_input": int(len(frame)),
+        "fundamental_rows_used": int(len(used)),
+        "future_filing_rows_removed": int(future_filing.sum()),
+        "future_period_rows_removed": int(future_period.sum()),
+    }
+
+
+def build_rebound_v4_feature_panel(
+    *,
+    panel: pd.DataFrame,
+    membership: pd.DataFrame,
+    calendar: pd.Series,
+    config: Any,
+    benchmark: pd.DataFrame,
+    params: dict[str, Any],
+    disclosure_events: pd.DataFrame,
+    fundamentals: pd.DataFrame,
+    dividend_actions: pd.DataFrame,
+    corporate_actions: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    features, factor_scores = build_rebound_v3_feature_panel(
+        panel=panel,
+        membership=membership,
+        calendar=calendar,
+        config=config,
+        benchmark=benchmark,
+        params=params,
+        disclosure_events=disclosure_events,
+        fundamentals=fundamentals,
+        dividend_actions=dividend_actions,
+        corporate_actions=corporate_actions,
+    )
+    features["v3_rank_score"] = features["rank_score"]
+
+    fee_rate = float(config.backtest.fee_bps) / 10_000
+    slippage_rate = float(config.backtest.slippage_bps) / 10_000
+    fixed_fee = float(config.portfolio.fixed_buy_fee_egp)
+    trade_notional = max(1.0, float(params.get("cost_model_trade_notional_egp", 600_000.0)))
+    round_trip_cost = 2.0 * (fee_rate + slippage_rate) + (2.0 * fixed_fee / trade_notional)
+    liquidity_impact_rate = (
+        float(params.get("liquidity_impact_bps_at_100pct_adv", 150.0)) / 10_000
+    )
+    median_value = features["median_daily_value_63"].replace(0.0, np.nan)
+    adv_fraction = trade_notional / median_value
+    features["estimated_round_trip_cost_pct"] = round_trip_cost
+    features["estimated_liquidity_impact_pct"] = (
+        adv_fraction.fillna(10.0) * liquidity_impact_rate
+    ).clip(lower=0.0, upper=float(params.get("max_liquidity_impact_pct", 0.020)))
+    features["expected_edge_pct"] = (
+        float(params["target_atr"])
+        * features["atr"].astype(float)
+        / features["close"].replace(0.0, np.nan)
+    )
+    total_cost = (
+        features["estimated_round_trip_cost_pct"]
+        + features["estimated_liquidity_impact_pct"]
+    )
+    features["expected_net_edge_pct"] = features["expected_edge_pct"] - total_cost
+    features["edge_cost_ratio"] = features["expected_edge_pct"] / total_cost.replace(
+        0.0, np.nan
+    )
+    features["entry_signal"] = (
+        features["entry_signal"].fillna(False)
+        & (
+            features["expected_net_edge_pct"].fillna(-1.0)
+            >= float(params.get("min_net_edge_pct", 0.0))
+        )
+        & (
+            features["edge_cost_ratio"].fillna(0.0)
+            >= float(params.get("min_edge_cost_ratio", 0.0))
+        )
+    )
+
+    features["net_edge_rank"] = features.groupby("date")["expected_net_edge_pct"].rank(
+        method="average", pct=True
+    )
+    features["liquidity_rank"] = features.groupby("date")[
+        "median_daily_value_63"
+    ].rank(method="average", pct=True)
+    weights = {
+        "v3_rank_score": float(params.get("v4_base_rank_weight", 0.62)),
+        "net_edge_rank": float(params.get("v4_net_edge_rank_weight", 0.23)),
+        "liquidity_rank": float(params.get("v4_liquidity_rank_weight", 0.10)),
+        "score_low_risk": float(params.get("v4_low_risk_weight", 0.05)),
+    }
+    total_weight = max(sum(weights.values()), 1e-9)
+    features["rank_score"] = sum(
+        features[column].fillna(0.5).astype(float) * weight
+        for column, weight in weights.items()
+    ) / total_weight
+
+    quality_blend = (
+        0.35 * features["factor_score"].fillna(0.5)
+        + 0.25 * features["score_momentum"].fillna(0.5)
+        + 0.20 * features["score_low_risk"].fillna(0.5)
+        + 0.20 * features["net_edge_rank"].fillna(0.5)
+    )
+    liquidity_scale = (
+        median_value / max(trade_notional * 2.0, 1.0)
+    ).clip(lower=0.55, upper=1.0)
+    features["position_size_mult"] = (
+        0.55 + 0.65 * quality_blend
+    ) * liquidity_scale.fillna(0.55)
+    features["position_size_mult"] = features["position_size_mult"].clip(
+        lower=float(params.get("dynamic_size_min", 0.55)),
+        upper=float(params.get("dynamic_size_max", 1.15)),
+    )
     return features, factor_scores
 
 
@@ -991,6 +1145,202 @@ def run_rebound_max5_v3(
             "panel_start": str(pd.Timestamp(panel["date"].min()).date()),
             "panel_end": str(pd.Timestamp(panel["date"].max()).date()),
         },
+        "factor_summary": factor_summary,
+        "train_start": str(pd.Timestamp(calendar.iloc[0]).date()),
+        "train_end": str(train_end_date.date()),
+        "test_start": str(test_start_date.date()),
+        "test_end": str(pd.Timestamp(calendar.iloc[-1]).date()),
+        "metrics": simulation.metrics,
+        "train_metrics": train_metrics,
+        "test_metrics": test_metrics,
+        "etf_dca_metrics": etf_full.metrics,
+        "etf_test_metrics": etf_test_metrics,
+        "test_excess_twr_vs_etf_dca": float(
+            test_metrics["twr_total_return"] - etf_test_metrics["twr_total_return"]
+        ),
+        "test_excess_cagr_vs_etf_dca": float(
+            test_metrics["cagr"] - etf_test_metrics["cagr"]
+        ),
+    }
+    write_json(run_dir / "summary.json", summary)
+    return StockStrategyValidationRun(run_id=actual_run_id, run_dir=run_dir)
+
+
+def run_rebound_max5_v4(
+    *,
+    config_path: str | Path = Path("config/stock_rotation_multifactor.yaml"),
+    run_id: str | None = None,
+    params: dict[str, Any] | None = None,
+    train_end: str = "2023-12-31",
+    use_market_filter: bool = True,
+) -> StockStrategyValidationRun:
+    config = load_stock_rotation_config(config_path)
+    config.selection.method = "sector_multifactor"
+    config.selection.use_total_return_features = True
+    config.selection.require_long_term_trend = True
+    config.selection.max_drawdown_252 = min(float(config.selection.max_drawdown_252), 0.60)
+    selected_params = dict(params or REBOUND_MAX5_V4_PARAMS)
+    selected_params["fixed_sell_fee_egp"] = float(config.portfolio.fixed_buy_fee_egp)
+
+    panel = load_stock_panel(config)
+    membership = load_membership_snapshots(config)
+    disclosure_events = load_disclosure_events(config)
+    fundamentals = load_stock_fundamentals(config)
+    dividend_actions = load_dividend_actions(config)
+    corporate_actions = load_corporate_actions(config)
+    etf = load_price_data(config.benchmark.etf_symbol_path)
+    index = load_price_data(config.benchmark.index_symbol_path)
+    calendar = (
+        pd.Series(pd.to_datetime(etf["date"]))
+        .sort_values()
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    panel = panel[panel["date"] >= pd.Timestamp(calendar.iloc[0])].reset_index(drop=True)
+    fundamentals, data_quality = _clean_future_fundamentals_for_run(
+        fundamentals,
+        pd.Timestamp(calendar.iloc[-1]),
+    )
+    actual_run_id = run_id or f"rebound-max5-v4-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    run_dir = ensure_dir(Path("runs") / actual_run_id)
+
+    regime_frame = (
+        build_market_regime_filter_v3(
+            etf=etf,
+            index=index,
+            panel=panel,
+            membership=membership,
+            calendar=calendar,
+            params=selected_params,
+        )
+        if use_market_filter
+        else pd.DataFrame(
+            {
+                "date": calendar.values,
+                "etf_regime_ok": True,
+                "index_regime_ok": True,
+                "breadth": np.nan,
+                "breadth_regime_ok": True,
+                "market_regime_ok": True,
+            }
+        )
+    )
+    market_filter = regime_frame.set_index("date")["market_regime_ok"]
+    features, factor_scores = build_rebound_v4_feature_panel(
+        panel=panel,
+        membership=membership,
+        calendar=calendar,
+        config=config,
+        benchmark=index,
+        params=selected_params,
+        disclosure_events=disclosure_events,
+        fundamentals=fundamentals,
+        dividend_actions=dividend_actions,
+        corporate_actions=corporate_actions,
+    )
+    simulation = simulate_event_driven_strategy(
+        panel=panel,
+        features=features,
+        calendar=calendar,
+        membership=membership,
+        config=config,
+        family="rebound",
+        params=selected_params,
+        market_filter=market_filter if use_market_filter else None,
+    )
+    etf_full = run_dca_benchmark(etf, 0, len(calendar) - 1, config.backtest)
+
+    train_end_date = pd.Timestamp(train_end)
+    test_start_date = pd.Timestamp(calendar[calendar > train_end_date].iloc[0])
+    train_metrics = _slice_metrics(
+        simulation, calendar, pd.Timestamp(calendar.iloc[0]), train_end_date
+    )
+    test_metrics = _slice_metrics(
+        simulation, calendar, test_start_date, pd.Timestamp(calendar.iloc[-1])
+    )
+    test_start_idx = _date_index(calendar, test_start_date, side="left")
+    etf_test_metrics = _period_benchmark_metrics(
+        etf=etf,
+        start_idx=test_start_idx,
+        end_idx=len(calendar) - 1,
+        config=config,
+    )
+
+    simulation.actions.to_csv(run_dir / "actions.csv", index=False)
+    simulation.positions.to_csv(run_dir / "positions.csv", index=False)
+    simulation.turnover.to_csv(run_dir / "turnover.csv", index=False)
+    regime_frame.to_csv(run_dir / "market_regime.csv", index=False)
+    factor_scores.to_csv(run_dir / "factor_scores.csv", index=False)
+    latest = simulation.latest_setups.copy()
+    latest.to_csv(run_dir / "latest_setups.csv", index=False)
+    features[
+        [
+            "date",
+            "symbol",
+            "entry_signal",
+            "rank_score",
+            "v3_rank_score",
+            "expected_edge_pct",
+            "expected_net_edge_pct",
+            "edge_cost_ratio",
+            "estimated_liquidity_impact_pct",
+            "position_size_mult",
+        ]
+    ].to_csv(run_dir / "v4_feature_audit.csv", index=False)
+    equity_curve = pd.DataFrame(
+        {
+            "date": calendar.values,
+            "strategy_equity": simulation.equity.values,
+            "etf_dca_equity": etf_full.equity.values,
+        }
+    ).merge(regime_frame, on="date", how="left")
+    equity_curve.to_csv(run_dir / "equity_curve.csv", index=False)
+    pd.DataFrame(
+        _yearly_rows(
+            simulation=simulation,
+            etf=etf,
+            calendar=calendar,
+            config=config,
+        )
+    ).to_csv(run_dir / "yearly_performance.csv", index=False)
+
+    factor_summary = {
+        "rows": int(len(factor_scores)),
+        "symbols": int(factor_scores["symbol"].nunique()) if not factor_scores.empty else 0,
+        "first_factor_date": (
+            str(pd.Timestamp(factor_scores["date"].min()).date())
+            if not factor_scores.empty
+            else None
+        ),
+        "last_factor_date": (
+            str(pd.Timestamp(factor_scores["date"].max()).date())
+            if not factor_scores.empty
+            else None
+        ),
+        "feature_rows_with_factor_score": int(features["factor_score"].notna().sum()),
+        "entry_signal_rows": int(features["entry_signal"].fillna(False).sum()),
+        "median_expected_net_edge_pct": float(
+            features["expected_net_edge_pct"].dropna().median()
+        )
+        if features["expected_net_edge_pct"].notna().any()
+        else 0.0,
+        "median_position_size_mult": float(features["position_size_mult"].median()),
+    }
+    summary = {
+        "run_id": actual_run_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "strategy": "rebound_max5_v4",
+        "params": selected_params,
+        "use_market_filter": bool(use_market_filter),
+        "data_coverage": {
+            "etf_start": str(pd.Timestamp(etf["date"].min()).date()),
+            "etf_end": str(pd.Timestamp(etf["date"].max()).date()),
+            "index_start": str(pd.Timestamp(index["date"].min()).date()),
+            "index_end": str(pd.Timestamp(index["date"].max()).date()),
+            "panel_start": str(pd.Timestamp(panel["date"].min()).date()),
+            "panel_end": str(pd.Timestamp(panel["date"].max()).date()),
+        },
+        "data_quality": data_quality,
         "factor_summary": factor_summary,
         "train_start": str(pd.Timestamp(calendar.iloc[0]).date()),
         "train_end": str(train_end_date.date()),
