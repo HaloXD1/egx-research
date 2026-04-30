@@ -1,0 +1,195 @@
+{
+  "created_at": "2026-04-29T17:17:22.654823+00:00",
+  "config_path": "config/stock_rotation_multifactor.yaml",
+  "start_date": "2015-01-15",
+  "end_date": "2026-04-05",
+  "fundamental_rows_loaded": 733,
+  "qa_flag_count": 12,
+  "pullback_source_run_id": "dca-pullback-only-20260411",
+  "best_candidate": {
+    "name": "walk_forward_ic_immediate",
+    "selection_mode": "walk_forward_ic",
+    "deployment_mode": "immediate",
+    "metrics": {
+      "final_equity": 6735534.321775753,
+      "total_contributions": 1430000.0,
+      "money_multiple": 4.710163861381646,
+      "twr_total_return": 4.5200272467094145,
+      "cagr": 0.2762376460570717,
+      "sharpe": 1.2610984365740592,
+      "max_drawdown": 0.31365880637461463,
+      "return_dd": 0.880694692586283,
+      "profit_factor": 0.0,
+      "closed_trades": 0.0
+    },
+    "holdout_metrics": {
+      "final_equity": 6735534.321775753,
+      "total_contributions": 180000.0,
+      "money_multiple": 37.41963512097641,
+      "twr_total_return": 1.0596400163224922,
+      "cagr": 0.677436386534507,
+      "sharpe": 2.422087930708218,
+      "max_drawdown": 0.11633988417120322,
+      "return_dd": 5.822907521014947,
+      "profit_factor": 0.0,
+      "closed_trades": 0.0
+    },
+    "holdout_excess_vs_etf_dca": 0.4959424764728646,
+    "balanced_score": 0.25942016171500926,
+    "total_fees": 154951.42992924998
+  },
+  "candidates": [
+    {
+      "name": "walk_forward_ic_immediate",
+      "selection_mode": "walk_forward_ic",
+      "deployment_mode": "immediate",
+      "metrics": {
+        "final_equity": 6735534.321775753,
+        "total_contributions": 1430000.0,
+        "money_multiple": 4.710163861381646,
+        "twr_total_return": 4.5200272467094145,
+        "cagr": 0.2762376460570717,
+        "sharpe": 1.2610984365740592,
+        "max_drawdown": 0.31365880637461463,
+        "return_dd": 0.880694692586283,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 6735534.321775753,
+        "total_contributions": 180000.0,
+        "money_multiple": 37.41963512097641,
+        "twr_total_return": 1.0596400163224922,
+        "cagr": 0.677436386534507,
+        "sharpe": 2.422087930708218,
+        "max_drawdown": 0.11633988417120322,
+        "return_dd": 5.822907521014947,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.4959424764728646,
+      "balanced_score": 0.25942016171500926,
+      "total_fees": 154951.42992924998
+    },
+    {
+      "name": "ensemble_pullback",
+      "selection_mode": "ensemble",
+      "deployment_mode": "pullback",
+      "metrics": {
+        "final_equity": 6640842.978212832,
+        "total_contributions": 1430000.0,
+        "money_multiple": 4.643946138610372,
+        "twr_total_return": 4.6426240512441295,
+        "cagr": 0.28024657026486355,
+        "sharpe": 1.0679134180998813,
+        "max_drawdown": 0.44074390980002387,
+        "return_dd": 0.6358489908391886,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 6640842.978212832,
+        "total_contributions": 180000.0,
+        "money_multiple": 36.8935721011824,
+        "twr_total_return": 1.1711016493275612,
+        "cagr": 0.7419367646813422,
+        "sharpe": 2.2828513613150534,
+        "max_drawdown": 0.16830166623875664,
+        "return_dd": 4.408374446090233,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.6074041094779337,
+      "balanced_score": 0.2527852186472916,
+      "total_fees": 113968.91498217001
+    },
+    {
+      "name": "ensemble_immediate",
+      "selection_mode": "ensemble",
+      "deployment_mode": "immediate",
+      "metrics": {
+        "final_equity": 5189037.083381753,
+        "total_contributions": 1430000.0,
+        "money_multiple": 3.6286972611061215,
+        "twr_total_return": 3.2374449844789606,
+        "cagr": 0.2289537496666132,
+        "sharpe": 1.125273245930408,
+        "max_drawdown": 0.2991811962686056,
+        "return_dd": 0.7652678461150946,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 5189037.083381753,
+        "total_contributions": 180000.0,
+        "money_multiple": 28.827983796565295,
+        "twr_total_return": 0.8430790827407797,
+        "cagr": 0.5491923451061889,
+        "sharpe": 2.3284546599572207,
+        "max_drawdown": 0.08702571336839404,
+        "return_dd": 6.3106905286874015,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.27938154289115213,
+      "balanced_score": 0.20381232257992019,
+      "total_fees": 145118.09510325
+    },
+    {
+      "name": "walk_forward_ic_pullback",
+      "selection_mode": "walk_forward_ic",
+      "deployment_mode": "pullback",
+      "metrics": {
+        "final_equity": 6647147.0816948805,
+        "total_contributions": 1430000.0,
+        "money_multiple": 4.648354602583833,
+        "twr_total_return": 4.666018900099767,
+        "cagr": 0.28100308623876424,
+        "sharpe": 1.015672787767931,
+        "max_drawdown": 0.43908474737987335,
+        "return_dd": 0.6399746015218674,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 6647147.0816948805,
+        "total_contributions": 180000.0,
+        "money_multiple": 36.928594898304894,
+        "twr_total_return": 0.9057936358993717,
+        "cagr": 0.5867513013410615,
+        "sharpe": 1.62779315581296,
+        "max_drawdown": 0.1940684703910428,
+        "return_dd": 3.023424156220602,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.3420960960497441,
+      "balanced_score": 0.19649023913786,
+      "total_fees": 124564.06153511998
+    }
+  ],
+  "etf_dca_metrics": {
+    "final_equity": 5536528.42918123,
+    "total_contributions": 1430000.0,
+    "money_multiple": 3.8716982022246365,
+    "twr_total_return": 4.108628547852023,
+    "cagr": 0.2622024037471724,
+    "sharpe": 0.9260996734907223,
+    "max_drawdown": 0.5191936840961645,
+    "return_dd": 0.5050184772636941,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_holdout_metrics": {
+    "final_equity": 5536528.42918123,
+    "total_contributions": 180000.0,
+    "money_multiple": 30.75849127322906,
+    "twr_total_return": 0.5636975398496276,
+    "cagr": 0.37719589907989026,
+    "sharpe": 1.8237824279970318,
+    "max_drawdown": 0.1360847517364394,
+    "return_dd": 2.771771960244452,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  }
+}

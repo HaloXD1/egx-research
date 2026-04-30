@@ -1,0 +1,75 @@
+{
+  "run_id": "best-strategy-research-20260414",
+  "holdout_start_date": "2024-10-23",
+  "etf_dca_holdout_metrics": {
+    "final_equity": 412675.37947249,
+    "total_contributions": 290000.0,
+    "money_multiple": 1.423018549905138,
+    "twr_total_return": 0.5611114732692362,
+    "cagr": 0.3743229563522399,
+    "sharpe": 1.8134290937016886,
+    "max_drawdown": 0.13605111495467226,
+    "return_dd": 2.751340600751063,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_full_metrics": {
+    "final_equity": 5536528.42918123,
+    "total_contributions": 1430000.0,
+    "money_multiple": 3.8716982022246365,
+    "twr_total_return": 4.108628547852023,
+    "cagr": 0.2622024037471724,
+    "sharpe": 0.9260996734907223,
+    "max_drawdown": 0.5191936840961645,
+    "return_dd": 0.5050184772636941,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_holdout_return": 0.5629391100702579,
+  "etf_buy_hold_full_return": 4.133653846153846,
+  "pullback_source_run_id": "dca-pullback-only-20260411",
+  "best_overall": {
+    "family": "annual_top10_stock_pullback",
+    "scope": "stock_holdout",
+    "holdout_excess_vs_dca": 6.2800650324647,
+    "holdout_twr_total_return": 6.8411765057339355,
+    "holdout_cagr": 3.3499251554726994,
+    "holdout_sharpe": 2.9042387081162544,
+    "holdout_max_drawdown": 0.23016156766963758,
+    "meta_json": "{\"coverage_min\": 0.6758620689655173, \"coverage_under_95_count\": 5, \"lookback_bars\": 126, \"membership_last_effective_date\": \"2025-02-01\", \"top_n\": 8}"
+  },
+  "best_etf": {
+    "family": "dca_pullback_only_repo_best",
+    "scope": "etf_holdout",
+    "holdout_excess_vs_dca": 0.00948435397963876,
+    "holdout_twr_total_return": 0.5705958272488749,
+    "holdout_cagr": 0.38027836858102604,
+    "holdout_sharpe": 1.9131935396220123,
+    "holdout_max_drawdown": 0.13440144024136114,
+    "meta_json": "{\"atr_len\": 8, \"buy_threshold\": -45.0, \"cci_len\": 26, \"kama_fast\": 3, \"kama_len\": 26, \"kama_slow\": 52, \"trend_buffer_atr\": 1.7000000000000002}"
+  },
+  "best_stock": {
+    "family": "annual_top10_stock_pullback",
+    "scope": "stock_holdout",
+    "holdout_excess_vs_dca": 6.2800650324647,
+    "holdout_twr_total_return": 6.8411765057339355,
+    "holdout_cagr": 3.3499251554726994,
+    "holdout_sharpe": 2.9042387081162544,
+    "holdout_max_drawdown": 0.23016156766963758,
+    "meta_json": "{\"coverage_min\": 0.6758620689655173, \"coverage_under_95_count\": 5, \"lookback_bars\": 126, \"membership_last_effective_date\": \"2025-02-01\", \"top_n\": 8}"
+  },
+  "best_basket": {
+    "family": "annual_top10_basket_immediate",
+    "scope": "basket_holdout",
+    "holdout_excess_vs_dca": 0.9798153176785611,
+    "holdout_twr_total_return": 1.5409267909477973,
+    "holdout_cagr": 0.945880700726111,
+    "holdout_sharpe": 2.254153133597181,
+    "holdout_max_drawdown": 0.19171350152065758,
+    "meta_json": "{\"basket_start_date\": \"2015-01-15\", \"coverage_min\": 0.9333333333333333, \"coverage_under_95_count\": 2, \"lookback_bars\": 126, \"membership_last_effective_date\": \"2025-02-01\", \"top_n\": 5}"
+  },
+  "notes": {
+    "stock_panel_warning": "Stock-basket results remain provisional until full historical membership and coverage are reconstructed.",
+    "membership_last_effective_date": "2025-02-01"
+  }
+}

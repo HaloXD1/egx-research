@@ -1,0 +1,56 @@
+{
+  "run_id": "relative-signal-amoc-etf-20260424",
+  "benchmark": "etf",
+  "benchmark_path": "data/normalized/EGX30_ETF.csv",
+  "symbols_requested": [
+    "AMOC"
+  ],
+  "symbols_completed": [
+    "AMOC"
+  ],
+  "errors": [],
+  "latest_top": [
+    {
+      "symbol": "AMOC",
+      "benchmark": "etf",
+      "as_of_date": "2026-04-05",
+      "overlap_start": "2015-01-15",
+      "overlap_end": "2026-04-05",
+      "overlap_rows": 1755,
+      "stock_close": 8.7,
+      "benchmark_close": 53.39,
+      "signal_score": 80.0,
+      "signal_state": "bullish",
+      "main_rule_on": true,
+      "main_rule_edge_63d": 0.19327287902398677,
+      "main_rule_hit_rate_63d": 0.65,
+      "main_rule_samples_63d": 20,
+      "rel_mom_21": 0.252923917485399,
+      "rel_mom_63": 0.10549357854042651,
+      "rel_mom_126": -0.13063097242490762,
+      "rel_mom_252": -0.29592496651553013,
+      "ratio_vs_sma50": 0.1452267698295333,
+      "ratio_vs_sma200": -0.021741976552234532,
+      "sma50_vs_sma200": -0.145795357548812,
+      "ratio_breakout_20": -0.09260608972531925,
+      "ratio_breakout_63": -0.09260608972531925,
+      "ratio_breakout_126": -0.1308517352028511,
+      "vol_adj_rel_mom_63": 3.0525507011501523,
+      "volume_ratio_20_63": 1.9588253739531798,
+      "mom63_volume_score": 0.20664349843411012,
+      "down_day_excess_63": 0.024446055596120363,
+      "down_day_excess_126": 0.01374973090424082,
+      "beta_252": 0.06277019966661332,
+      "corr_252": 0.04310817945662343,
+      "residual_strength_21_126b": 0.2342841606654926,
+      "residual_strength_63_126b": 0.23712886690004562,
+      "residual_strength_126_126b": 0.12957883248049745,
+      "rank": 1
+    }
+  ],
+  "artifact_paths": {
+    "latest_signals": "runs/relative-signal-amoc-etf-20260424/latest_signals.csv",
+    "signal_edges": "runs/relative-signal-amoc-etf-20260424/signal_edges.csv",
+    "signal_history": "runs/relative-signal-amoc-etf-20260424/signal_history.csv"
+  }
+}

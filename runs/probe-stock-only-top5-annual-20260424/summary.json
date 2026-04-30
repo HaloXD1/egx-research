@@ -1,0 +1,142 @@
+{
+  "run_id": "probe-stock-only-top5-annual-20260424",
+  "strategy": "etf_core_stock_satellite_drawdown_guard",
+  "start_date": "2019-02-05",
+  "end_date": "2026-04-05",
+  "top_n": 5,
+  "core_weight": 0.5,
+  "satellite_weight": 0.5,
+  "rebalance_mode": "annual",
+  "drawdown_guard": 0.35,
+  "core_satellite_metrics": {
+    "final_equity": 3213175.4981441307,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.418271806536309,
+    "twr_total_return": 2.4418345296225774,
+    "cagr": 0.26956808837529755,
+    "sharpe": 1.0997142466516656,
+    "max_drawdown": 0.49080362334200034,
+    "return_dd": 0.5492381790903322,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "adaptive_balanced_profile": {
+    "bull_core": 0.3,
+    "neutral_core": 0.5,
+    "stress_core": 0.8,
+    "portfolio_drawdown_guard": 0.25,
+    "sleeve_drawdown_guard": 0.3
+  },
+  "adaptive_balanced_metrics": {
+    "final_equity": 3346164.0172059806,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.5597489544744474,
+    "twr_total_return": 2.3865970737262305,
+    "cagr": 0.2656078624758702,
+    "sharpe": 1.0435178808014345,
+    "max_drawdown": 0.5104340443834661,
+    "return_dd": 0.5203568715654299,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "adaptive_aggressive_profile": {
+    "bull_core": 0.2,
+    "neutral_core": 0.5,
+    "stress_core": 0.9,
+    "portfolio_drawdown_guard": 0.25,
+    "sleeve_drawdown_guard": 0.3
+  },
+  "adaptive_aggressive_metrics": {
+    "final_equity": 3494223.9305707505,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.7172595006071814,
+    "twr_total_return": 2.4274087850459085,
+    "cagr": 0.2685388170046923,
+    "sharpe": 1.0169179199494747,
+    "max_drawdown": 0.5209414929532196,
+    "return_dd": 0.5154874791837843,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "static_top10_dca_metrics": {
+    "final_equity": 3006319.8155572102,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.198212569741713,
+    "twr_total_return": 2.1386151074792066,
+    "cagr": 0.24715902106298793,
+    "sharpe": 0.7993881340720017,
+    "max_drawdown": 0.6165726734396964,
+    "return_dd": 0.4008595121223147,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "annual_top10_dca_metrics": {
+    "final_equity": 3465341.145204991,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.686533133196799,
+    "twr_total_return": 2.4499879625375285,
+    "cagr": 0.27014829390515094,
+    "sharpe": 0.9191828274403615,
+    "max_drawdown": 0.5508272623532721,
+    "return_dd": 0.49044103727003224,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_metrics": {
+    "final_equity": 2973968.2510084505,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.1637960117111175,
+    "twr_total_return": 2.3937514182144537,
+    "cagr": 0.26612371513633204,
+    "sharpe": 0.9792414579092253,
+    "max_drawdown": 0.42754520562501774,
+    "return_dd": 0.6224457943512485,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_return": 2.4895424836601308,
+  "core_satellite_excess_vs_etf_dca": 0.04808311140812371,
+  "adaptive_balanced_excess_vs_etf_dca": -0.007154344488223163,
+  "adaptive_aggressive_excess_vs_etf_dca": 0.033657366831454816,
+  "static_top10_excess_vs_etf_dca": -0.2551363107352471,
+  "annual_top10_excess_vs_etf_dca": 0.05623654432307479,
+  "total_fees": {
+    "core_satellite": 15851.545440869999,
+    "adaptive_balanced": 12767.42694402,
+    "adaptive_aggressive": 10124.928924249998,
+    "static_top10_dca": 4505.87054779,
+    "annual_top10_dca": 28057.760900009995
+  },
+  "number_of_rebalances": 8,
+  "latest_rebalance_date": "2026-01-04",
+  "latest_selected_stocks": [
+    "ETEL",
+    "MCQE",
+    "TMGH",
+    "EGAL",
+    "FWRY"
+  ],
+  "first_selected_stocks": [
+    "CCAP",
+    "ORHD",
+    "ABUK",
+    "GBCO",
+    "EAST"
+  ],
+  "costs": {
+    "fee_bps": 20.0,
+    "slippage_bps": 5.0,
+    "fixed_buy_fee_egp": 5.0,
+    "share_precision": 0
+  },
+  "artifact_paths": {
+    "selected_holdings": "runs/probe-stock-only-top5-annual-20260424/selected_holdings.csv",
+    "equity_curve": "runs/probe-stock-only-top5-annual-20260424/equity_curve.csv",
+    "trade_actions": "runs/probe-stock-only-top5-annual-20260424/trade_actions.csv",
+    "turnover": "runs/probe-stock-only-top5-annual-20260424/turnover.csv",
+    "trade_actions_adaptive_balanced": "runs/probe-stock-only-top5-annual-20260424/trade_actions_adaptive_balanced.csv",
+    "turnover_adaptive_balanced": "runs/probe-stock-only-top5-annual-20260424/turnover_adaptive_balanced.csv",
+    "trade_actions_adaptive_aggressive": "runs/probe-stock-only-top5-annual-20260424/trade_actions_adaptive_aggressive.csv",
+    "turnover_adaptive_aggressive": "runs/probe-stock-only-top5-annual-20260424/turnover_adaptive_aggressive.csv"
+  }
+}

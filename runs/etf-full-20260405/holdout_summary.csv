@@ -1,0 +1,11 @@
+family,rank_score,passed_filters,holdout_cagr,holdout_profit_factor,holdout_max_drawdown,holdout_excess_return_vs_dca,neighbor_pass_rate,params
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 49, 'exit_lookback': 17, 'regime_ma': 209, 'atr_stop': 2.7, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 50, 'exit_lookback': 17, 'regime_ma': 215, 'atr_stop': 2.4, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 49, 'exit_lookback': 19, 'regime_ma': 212, 'atr_stop': 4.9, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 50, 'exit_lookback': 18, 'regime_ma': 217, 'atr_stop': 4.1, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 51, 'exit_lookback': 19, 'regime_ma': 219, 'atr_stop': 2.6, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 49, 'exit_lookback': 19, 'regime_ma': 197, 'atr_stop': 2.9000000000000004, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 49, 'exit_lookback': 17, 'regime_ma': 210, 'atr_stop': 4.2, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 47, 'exit_lookback': 19, 'regime_ma': 160, 'atr_stop': 2.6, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 47, 'exit_lookback': 17, 'regime_ma': 219, 'atr_stop': 3.0, 'atr_trail': 2.3}"
+breakout,3.771598422751647,False,0.18839842896868353,9.966259318407008,0.08438885405810903,-0.28935458174170625,0.9,"{'entry_lookback': 45, 'exit_lookback': 19, 'regime_ma': 181, 'atr_stop': 2.5, 'atr_trail': 2.3}"

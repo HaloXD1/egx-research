@@ -1,0 +1,41 @@
+data:
+  symbol: EGX30_ETF
+  raw_dir: data/raw
+  normalized_dir: data/normalized
+  normalized_filename: EGX30_ETF.csv
+backtest:
+  initial_cash: 100000.0
+  monthly_contribution: 10000.0
+  fee_bps: 20.0
+  slippage_bps: 5.0
+  share_precision: 0
+search:
+  families:
+  - trend
+  - mean_reversion
+  - breakout
+  trials_per_family: 500
+  top_candidates_per_family: 10
+  random_seed: 42
+  robustness_neighbor_steps: 1
+validation:
+  holdout_ratio: 0.2
+  primary_train_bars: 756
+  primary_test_bars: 252
+  primary_step_bars: 126
+  fallback_train_bars: 504
+  fallback_test_bars: 126
+  fallback_step_bars: 63
+ranking:
+  weights:
+    return_dd: 0.4
+    cagr: 0.2
+    profit_factor: 0.15
+    sharpe: 0.15
+    excess_return_vs_dca: 0.1
+  filters:
+    min_closed_trades: 25
+    max_drawdown: 0.35
+    min_profit_factor: 1.1
+    min_holdout_excess_return: 0.0
+    min_neighbor_pass_rate: 0.75

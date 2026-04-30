@@ -1,0 +1,19 @@
+{
+  "as_of_date": "2026-04-09",
+  "symbols_included": 33,
+  "includes_egx30_etf": true,
+  "includes_egx30_index": true,
+  "egx30_benchmark_used_for_rs": "EGX30_ETF",
+  "top_10_symbols_by_composite": [
+    "OIH",
+    "ARCC",
+    "ETEL",
+    "ORAS",
+    "RAYA",
+    "FWRY",
+    "MCQE",
+    "CCAP",
+    "EGAL",
+    "EFIH"
+  ]
+}

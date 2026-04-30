@@ -1,0 +1,8 @@
+family,parameter,importance
+dca_pullback_only,buy_threshold,0.41147641423060494
+dca_pullback_only,cci_len,0.26115970292132945
+dca_pullback_only,kama_len,0.1758944717464018
+dca_pullback_only,trend_buffer_atr,0.07621594388788645
+dca_pullback_only,kama_fast,0.05304384642156085
+dca_pullback_only,atr_len,0.011746860267109385
+dca_pullback_only,kama_slow,0.010462760525107131

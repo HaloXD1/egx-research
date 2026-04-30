@@ -1,0 +1,13 @@
+{
+  "run_id": "etf-full-20260405",
+  "created_at": "2026-04-05T12:18:33.427934+00:00",
+  "normalized_path": "data/normalized/EGX30_ETF.csv",
+  "window_scheme": "primary",
+  "holdout_bars": 353,
+  "families": [
+    "trend",
+    "mean_reversion",
+    "breakout"
+  ],
+  "trials_per_family": 500
+}

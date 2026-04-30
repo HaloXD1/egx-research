@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-04-11T16:48:26.812812+00:00",
+  "model_run_id": "dca-pullback-only-20260411",
+  "family": "dca_pullback_only",
+  "params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "requested_start_date": "2026-04-12",
+  "latest_available_date": "2026-04-05",
+  "normalized_path": "data/normalized/EGX30_ETF.csv",
+  "status": "waiting_for_future_data"
+}

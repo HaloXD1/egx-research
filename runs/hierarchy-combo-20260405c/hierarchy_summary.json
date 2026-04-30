@@ -1,0 +1,102 @@
+{
+  "best_hierarchy": {
+    "hierarchy": "trend_only",
+    "trend_indicator": "kama",
+    "momentum_indicator": NaN,
+    "volume_indicator": NaN,
+    "wf_score": 3.7153699158707676,
+    "wf_twr": 0.6402303277711592,
+    "wf_excess_vs_dca": -0.021749847206376183,
+    "holdout_twr": 0.3766111574179969,
+    "holdout_cagr": 0.2571186255835123,
+    "holdout_excess_vs_dca": -0.18539324834279292,
+    "holdout_profit_factor": 4.610555641606132,
+    "params": "{\"atr_stop\": 5.0, \"atr_trail\": 3.2, \"hierarchy\": \"trend_only\", \"kama_fast\": 2, \"kama_len\": 18, \"kama_slow\": 53, \"trend_indicator\": \"kama\"}"
+  },
+  "best_by_hierarchy": [
+    {
+      "hierarchy": "trend_only",
+      "trend_indicator": "kama",
+      "momentum_indicator": NaN,
+      "volume_indicator": NaN,
+      "wf_score": 3.7153699158707676,
+      "wf_twr": 0.6402303277711592,
+      "wf_excess_vs_dca": -0.021749847206376183,
+      "holdout_twr": 0.3766111574179969,
+      "holdout_cagr": 0.2571186255835123,
+      "holdout_excess_vs_dca": -0.18539324834279292,
+      "holdout_profit_factor": 4.610555641606132,
+      "params": "{\"atr_stop\": 5.0, \"atr_trail\": 3.2, \"hierarchy\": \"trend_only\", \"kama_fast\": 2, \"kama_len\": 18, \"kama_slow\": 53, \"trend_indicator\": \"kama\"}"
+    },
+    {
+      "hierarchy": "trend_volume",
+      "trend_indicator": "kama",
+      "momentum_indicator": NaN,
+      "volume_indicator": "cmf",
+      "wf_score": 1.7880463650950609,
+      "wf_twr": 0.21810467732319028,
+      "wf_excess_vs_dca": -0.4438754976543451,
+      "holdout_twr": 0.37210785244285205,
+      "holdout_cagr": 0.2541731443939954,
+      "holdout_excess_vs_dca": -0.18989655331793776,
+      "holdout_profit_factor": 25.08500805686134,
+      "params": "{\"atr_stop\": 3.2, \"atr_trail\": 2.9000000000000004, \"cmf_len\": 18, \"cmf_threshold\": 0.0, \"hierarchy\": \"trend_volume\", \"kama_fast\": 4, \"kama_len\": 11, \"kama_slow\": 30, \"trend_indicator\": \"kama\", \"volume_indicator\": \"cmf\"}"
+    },
+    {
+      "hierarchy": "trend_momentum_volume",
+      "trend_indicator": "kama",
+      "momentum_indicator": "cci",
+      "volume_indicator": "obv",
+      "wf_score": 3.6564902204026213,
+      "wf_twr": 0.5874263629811447,
+      "wf_excess_vs_dca": -0.07455381199639066,
+      "holdout_twr": 0.3552742089455254,
+      "holdout_cagr": 0.24313832010150604,
+      "holdout_excess_vs_dca": -0.2067301968152644,
+      "holdout_profit_factor": 4.013575122372821,
+      "params": "{\"atr_stop\": 1.0, \"atr_trail\": 1.8, \"cci_len\": 40, \"cci_threshold\": 0.0, \"hierarchy\": \"trend_momentum_volume\", \"kama_fast\": 2, \"kama_len\": 23, \"kama_slow\": 23, \"momentum_indicator\": \"cci\", \"obv_ema_len\": 58, \"trend_indicator\": \"kama\", \"volume_indicator\": \"obv\"}"
+    },
+    {
+      "hierarchy": "trend_momentum",
+      "trend_indicator": "kama",
+      "momentum_indicator": "cci",
+      "volume_indicator": NaN,
+      "wf_score": 4.587882816399485,
+      "wf_twr": 0.6512504759988451,
+      "wf_excess_vs_dca": -0.01072969897869025,
+      "holdout_twr": 0.293935449263768,
+      "holdout_cagr": 0.20259461748613883,
+      "holdout_excess_vs_dca": -0.2680689564970218,
+      "holdout_profit_factor": 5.328252347885368,
+      "params": "{\"atr_stop\": 2.8, \"atr_trail\": 2.8000000000000003, \"cci_len\": 26, \"cci_threshold\": 10.0, \"hierarchy\": \"trend_momentum\", \"kama_fast\": 4, \"kama_len\": 15, \"kama_slow\": 21, \"momentum_indicator\": \"cci\", \"trend_indicator\": \"kama\"}"
+    }
+  ],
+  "best_momentum_active": {
+    "hierarchy": "trend_momentum_volume",
+    "trend_indicator": "kama",
+    "momentum_indicator": "cci",
+    "volume_indicator": "obv",
+    "wf_score": 3.6564902204026213,
+    "wf_twr": 0.5874263629811447,
+    "wf_excess_vs_dca": -0.07455381199639066,
+    "holdout_twr": 0.3552742089455254,
+    "holdout_cagr": 0.24313832010150604,
+    "holdout_excess_vs_dca": -0.2067301968152644,
+    "holdout_profit_factor": 4.013575122372821,
+    "params": "{\"atr_stop\": 1.0, \"atr_trail\": 1.8, \"cci_len\": 40, \"cci_threshold\": 0.0, \"hierarchy\": \"trend_momentum_volume\", \"kama_fast\": 2, \"kama_len\": 23, \"kama_slow\": 23, \"momentum_indicator\": \"cci\", \"obv_ema_len\": 58, \"trend_indicator\": \"kama\", \"volume_indicator\": \"obv\"}"
+  },
+  "best_volume_active": {
+    "hierarchy": "trend_volume",
+    "trend_indicator": "kama",
+    "momentum_indicator": NaN,
+    "volume_indicator": "cmf",
+    "wf_score": 1.7880463650950609,
+    "wf_twr": 0.21810467732319028,
+    "wf_excess_vs_dca": -0.4438754976543451,
+    "holdout_twr": 0.37210785244285205,
+    "holdout_cagr": 0.2541731443939954,
+    "holdout_excess_vs_dca": -0.18989655331793776,
+    "holdout_profit_factor": 25.08500805686134,
+    "params": "{\"atr_stop\": 3.2, \"atr_trail\": 2.9000000000000004, \"cmf_len\": 18, \"cmf_threshold\": 0.0, \"hierarchy\": \"trend_volume\", \"kama_fast\": 4, \"kama_len\": 11, \"kama_slow\": 30, \"trend_indicator\": \"kama\", \"volume_indicator\": \"cmf\"}"
+  }
+}

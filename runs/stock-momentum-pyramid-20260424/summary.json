@@ -1,0 +1,89 @@
+{
+  "run_id": "stock-momentum-pyramid-20260424",
+  "strategy": "stock_momentum_pyramid",
+  "start_date": "2019-02-05",
+  "end_date": "2026-04-05",
+  "max_holdings": 10,
+  "focus_n": 5,
+  "max_weight": 0.25,
+  "focus_fill_weight": 0.2,
+  "exit_rank": 20,
+  "exit_months": 2,
+  "momentum_pyramid_metrics": {
+    "final_equity": 2603346.2197417216,
+    "total_contributions": 940000.0,
+    "money_multiple": 2.7695172550443847,
+    "twr_total_return": 0.8495441132676482,
+    "cagr": 0.12608484401845832,
+    "sharpe": 0.5267259585621358,
+    "max_drawdown": 0.6615027123832128,
+    "return_dd": 0.19060366897697095,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "annual_top10_dca_metrics": {
+    "final_equity": 4962894.109804591,
+    "total_contributions": 940000.0,
+    "money_multiple": 5.279674584898501,
+    "twr_total_return": 4.1354360408420705,
+    "cagr": 0.3715603813233668,
+    "sharpe": 1.1778701722832379,
+    "max_drawdown": 0.5451238618099834,
+    "return_dd": 0.6816072591092764,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_metrics": {
+    "final_equity": 2973968.2510084505,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.1637960117111175,
+    "twr_total_return": 2.3937514182144537,
+    "cagr": 0.26612371513633204,
+    "sharpe": 0.9792414579092253,
+    "max_drawdown": 0.42754520562501774,
+    "return_dd": 0.6224457943512485,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "momentum_pyramid_excess_vs_annual_top10": -3.285891927574422,
+  "momentum_pyramid_excess_vs_etf_dca": -1.5442073049468055,
+  "total_fees": {
+    "momentum_pyramid": 62921.37651828,
+    "annual_top10_dca": 28179.357300409996
+  },
+  "trade_count": 1171,
+  "latest_holdings": [
+    {
+      "symbol": "ETEL",
+      "weight": 0.26248912501038246,
+      "rank": 4.0,
+      "score": 0.6901234567901235
+    },
+    {
+      "symbol": "MCQE",
+      "weight": 0.24813027039134325,
+      "rank": 2.0,
+      "score": 0.7277777777777777
+    },
+    {
+      "symbol": "EGAL",
+      "weight": 0.17868251031241597,
+      "rank": 1.0,
+      "score": 0.8265432098765432
+    },
+    {
+      "symbol": "ABUK",
+      "weight": 0.1620332685526454,
+      "rank": 3.0,
+      "score": 0.7246913580246914
+    }
+  ],
+  "artifact_paths": {
+    "monthly_rankings": "runs/stock-momentum-pyramid-20260424/monthly_rankings.csv",
+    "selected_holdings": "runs/stock-momentum-pyramid-20260424/selected_holdings.csv",
+    "equity_curve": "runs/stock-momentum-pyramid-20260424/equity_curve.csv",
+    "trade_actions": "runs/stock-momentum-pyramid-20260424/trade_actions.csv",
+    "turnover": "runs/stock-momentum-pyramid-20260424/turnover.csv",
+    "annual_top10_selected_holdings": "runs/stock-momentum-pyramid-20260424/annual_top10_selected_holdings.csv"
+  }
+}

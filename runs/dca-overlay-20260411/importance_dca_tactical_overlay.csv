@@ -1,0 +1,11 @@
+family,parameter,importance
+dca_tactical_overlay,kama_fast,0.27852580518587894
+dca_tactical_overlay,cci_len,0.195262564557255
+dca_tactical_overlay,core_weight,0.1910596698676763
+dca_tactical_overlay,kama_slow,0.08563208767740188
+dca_tactical_overlay,sleeve_ladder,0.08139338585091817
+dca_tactical_overlay,kama_len,0.04793865307775216
+dca_tactical_overlay,atr_trail,0.039736606768141794
+dca_tactical_overlay,atr_stop,0.034650035087168546
+dca_tactical_overlay,atr_len,0.029156586862928217
+dca_tactical_overlay,cci_threshold,0.016644605064878942

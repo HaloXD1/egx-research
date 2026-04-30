@@ -1,0 +1,21 @@
+{
+  "run_id": "dca-pullback-topup-20260411",
+  "top_family": "dca_pullback_topup",
+  "top_params": {
+    "core_weight": 0.8,
+    "reserve_weight": 0.2,
+    "kama_len": 38,
+    "kama_fast": 5,
+    "kama_slow": 27,
+    "cci_len": 19,
+    "buy_mild": -90.0,
+    "buy_deep": -95.0,
+    "trend_buffer_atr": 0.8,
+    "topup_profile": "50_75_100",
+    "atr_len": 16,
+    "atr_stop": 3.5,
+    "atr_trail": 1.3
+  },
+  "top_rank_score": -0.05941769458983859,
+  "holdout_excess_return_vs_dca": -0.05941769458983859
+}

@@ -1,0 +1,14 @@
+family,parameter,importance
+dca_pullback_topup,core_weight,0.6751577934637013
+dca_pullback_topup,topup_profile,0.13486135932248852
+dca_pullback_topup,atr_stop,0.03348482860591831
+dca_pullback_topup,atr_trail,0.028845695173810804
+dca_pullback_topup,kama_fast,0.028805259104092498
+dca_pullback_topup,buy_mild,0.025048624839968874
+dca_pullback_topup,reserve_weight,0.015362170923249631
+dca_pullback_topup,kama_len,0.015125648079700559
+dca_pullback_topup,kama_slow,0.01405713786519282
+dca_pullback_topup,trend_buffer_atr,0.010294211836454601
+dca_pullback_topup,buy_deep,0.008021258880231636
+dca_pullback_topup,atr_len,0.006760672615058783
+dca_pullback_topup,cci_len,0.004175339290131858

@@ -1,0 +1,13 @@
+{
+  "run_id": "etf-full-20260405",
+  "top_family": "breakout",
+  "top_params": {
+    "entry_lookback": 49,
+    "exit_lookback": 17,
+    "regime_ma": 209,
+    "atr_stop": 2.7,
+    "atr_trail": 2.3
+  },
+  "top_rank_score": 3.771598422751647,
+  "holdout_excess_return_vs_dca": -0.28935458174170625
+}

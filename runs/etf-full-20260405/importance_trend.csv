@@ -1,0 +1,8 @@
+family,parameter,importance
+trend,adx_len,0.48139441430984603
+trend,atr_trail,0.14344384651716793
+trend,adx_threshold,0.13655144246083892
+trend,fast_ma,0.10960233808827763
+trend,ma_type,0.044566442674576094
+trend,slow_ma,0.043865676925406535
+trend,atr_stop,0.04057583902388676

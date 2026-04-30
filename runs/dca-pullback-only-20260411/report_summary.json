@@ -1,0 +1,15 @@
+{
+  "run_id": "dca-pullback-only-20260411",
+  "top_family": "dca_pullback_only",
+  "top_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "top_rank_score": 0.008591421488085116,
+  "holdout_excess_return_vs_dca": 0.008591421488085116
+}

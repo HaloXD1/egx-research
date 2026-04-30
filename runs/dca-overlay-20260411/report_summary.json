@@ -1,0 +1,18 @@
+{
+  "run_id": "dca-overlay-20260411",
+  "top_family": "dca_tactical_overlay",
+  "top_params": {
+    "core_weight": 0.8,
+    "kama_len": 35,
+    "kama_fast": 5,
+    "kama_slow": 51,
+    "cci_len": 38,
+    "cci_threshold": 20.0,
+    "sleeve_ladder": "100_60_20",
+    "atr_len": 7,
+    "atr_stop": 4.4,
+    "atr_trail": 2.6
+  },
+  "top_rank_score": -0.027035528844673307,
+  "holdout_excess_return_vs_dca": -0.027035528844673307
+}

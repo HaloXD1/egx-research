@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-04-14T12:28:02.254881+00:00",
+  "stock_config_path": "config/stock_rotation.yaml",
+  "benchmark_path": "data/normalized/EGX30_ETF.csv",
+  "top_n": 10,
+  "lookback_bars": 252,
+  "pullback_source_run_id": "dca-pullback-only-20260411",
+  "pullback_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "start_date": "2015-01-15",
+  "end_date": "2026-04-05"
+}

@@ -1,0 +1,9 @@
+{
+  "status": "waiting_for_future_data",
+  "message": "No data yet after 2026-04-12. Ingest new ETF data and rerun paper-track.",
+  "latest_state": {
+    "date": "2026-04-05",
+    "signal": "WAIT",
+    "deploy_fraction": 0.0
+  }
+}

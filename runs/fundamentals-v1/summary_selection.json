@@ -1,0 +1,153 @@
+{
+  "start_date": "2015-02-01",
+  "end_date": "2026-04-05",
+  "rebalance_mode": "monthly",
+  "top_n": 8,
+  "selection_method": "institutional_multi_factor_core_v0",
+  "turnover_buffer_score": 0.03,
+  "pullback_source_run_id": "dca-pullback-only-20260411",
+  "pullback_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "dividend_actions_loaded": 52,
+  "corporate_actions_loaded": 30,
+  "fundamental_rows_loaded": 0,
+  "immediate_metrics": {
+    "final_equity": 6163286.546151697,
+    "total_contributions": 1420000.0,
+    "money_multiple": 4.340342638134998,
+    "twr_total_return": 3.2300450374285186,
+    "cagr": 0.23008951505127562,
+    "sharpe": 1.0789567464049377,
+    "max_drawdown": 0.4220956845253798,
+    "return_dd": 0.5451122185956411,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "pullback_metrics": {
+    "final_equity": 5221827.312531262,
+    "total_contributions": 1420000.0,
+    "money_multiple": 3.6773431778389165,
+    "twr_total_return": 2.7433879795827725,
+    "cagr": 0.20869006281657043,
+    "sharpe": 0.8674211622855034,
+    "max_drawdown": 0.3845526091075706,
+    "return_dd": 0.5426827380026792,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_metrics": {
+    "final_equity": 5488656.48069686,
+    "total_contributions": 1420000.0,
+    "money_multiple": 3.8652510427442675,
+    "twr_total_return": 4.079051007584616,
+    "cagr": 0.26282490665862634,
+    "sharpe": 0.9268347237196243,
+    "max_drawdown": 0.5192050690679424,
+    "return_dd": 0.5062063572114961,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_return": 4.099331423113658,
+  "holdout_ratio": 0.2,
+  "holdout_start_date": "2024-10-28",
+  "etf_holdout_metrics": {
+    "final_equity": 5488656.48069686,
+    "total_contributions": 180000.0,
+    "money_multiple": 30.492536003871443,
+    "twr_total_return": 0.5437991442634029,
+    "cagr": 0.3670530652665991,
+    "sharpe": 1.7803191762306965,
+    "max_drawdown": 0.1360854986103196,
+    "return_dd": 2.697223943879975,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "candidate_evaluation": [
+    {
+      "style": "immediate",
+      "full_metrics": {
+        "final_equity": 6163286.546151697,
+        "total_contributions": 1420000.0,
+        "money_multiple": 4.340342638134998,
+        "twr_total_return": 3.2300450374285186,
+        "cagr": 0.23008951505127562,
+        "sharpe": 1.0789567464049377,
+        "max_drawdown": 0.4220956845253798,
+        "return_dd": 0.5451122185956411,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 6163286.546151697,
+        "total_contributions": 180000.0,
+        "money_multiple": 34.24048081195387,
+        "twr_total_return": 0.6633474776476289,
+        "cagr": 0.44247318468118624,
+        "sharpe": 1.9271288830705748,
+        "max_drawdown": 0.09933217820030049,
+        "return_dd": 4.4544798342079215,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.11954833338422599,
+      "neighbor_pass_rate": 1.0,
+      "mean_rebalance_turnover_pct": 0.3212780833449937,
+      "total_fees": 213539.58579331,
+      "fee_to_contributions_ratio": 0.15037998999528873,
+      "passes_constraints": true
+    },
+    {
+      "style": "pullback",
+      "full_metrics": {
+        "final_equity": 5221827.312531262,
+        "total_contributions": 1420000.0,
+        "money_multiple": 3.6773431778389165,
+        "twr_total_return": 2.7433879795827725,
+        "cagr": 0.20869006281657043,
+        "sharpe": 0.8674211622855034,
+        "max_drawdown": 0.3845526091075706,
+        "return_dd": 0.5426827380026792,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_metrics": {
+        "final_equity": 5221827.312531262,
+        "total_contributions": 180000.0,
+        "money_multiple": 29.010151736284786,
+        "twr_total_return": 0.58346791690713,
+        "cagr": 0.39225463783378167,
+        "sharpe": 1.2248085240289457,
+        "max_drawdown": 0.13217323040508078,
+        "return_dd": 2.9677313373639334,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "holdout_excess_vs_etf_dca": 0.039668772643727035,
+      "neighbor_pass_rate": 1.0,
+      "mean_rebalance_turnover_pct": 0.18268520352526238,
+      "total_fees": 249359.04365874006,
+      "fee_to_contributions_ratio": 0.1756049603230564,
+      "passes_constraints": true
+    }
+  ],
+  "selected_style": "immediate",
+  "best_holdout_style": "immediate",
+  "selection_reason": "Best holdout excess among constraint-passing styles.",
+  "constraints": {
+    "min_holdout_excess_return": 0.0,
+    "max_drawdown": 0.8,
+    "min_neighbor_pass_rate": 0.6,
+    "max_mean_rebalance_turnover_pct": 0.95,
+    "max_fee_to_contributions_ratio": 0.2
+  },
+  "coverage_min_selected": 1.0,
+  "selection_rebalance_count": 132,
+  "missing_fundamental_warning_count": 57
+}

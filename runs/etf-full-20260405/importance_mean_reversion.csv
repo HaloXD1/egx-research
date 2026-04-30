@@ -1,0 +1,8 @@
+family,parameter,importance
+mean_reversion,rsi_entry,0.2927124216880218
+mean_reversion,rsi_len,0.23226024666778092
+mean_reversion,bb_len,0.21826785173554827
+mean_reversion,bb_std,0.1009496109107585
+mean_reversion,rsi_exit,0.09775171686200226
+mean_reversion,atr_stop,0.029993730424657566
+mean_reversion,regime_ma,0.028064421711230646

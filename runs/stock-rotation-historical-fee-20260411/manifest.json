@@ -1,0 +1,8 @@
+{
+  "created_at": "2026-04-11T17:41:54.712209+00:00",
+  "config_path": "config/stock_rotation.yaml",
+  "panel_path": "data/stock_rotation/panel.csv",
+  "benchmark_path": "data/normalized/EGX30_ETF.csv",
+  "start_date": "2015-02-01",
+  "end_date": "2026-04-05"
+}

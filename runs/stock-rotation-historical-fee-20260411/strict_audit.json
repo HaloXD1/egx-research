@@ -1,0 +1,63 @@
+{
+  "rotation": {
+    "final_equity": 7211704.2299999995,
+    "total_contributions": 1420000.0,
+    "money_multiple": 5.078664950704225,
+    "twr_total_return": 6.0773935475736485,
+    "cagr": 0.32444246168633284,
+    "sharpe": 1.2189955941353499,
+    "max_drawdown": 0.40124548577942576,
+    "return_dd": 0.8085884407050665,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca": {
+    "final_equity": 5488656.48069686,
+    "total_contributions": 1420000.0,
+    "money_multiple": 3.8652510427442675,
+    "twr_total_return": 4.079051007584616,
+    "cagr": 0.26282490665862634,
+    "sharpe": 0.9268347237196243,
+    "max_drawdown": 0.5192050690679424,
+    "return_dd": 0.5062063572114961,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "current_basket_equal_weight_dca_metrics": {
+    "final_equity": 7660163.759999999,
+    "total_contributions": 1420000.0,
+    "money_multiple": 5.394481521126759,
+    "twr_total_return": 6.02385793015783,
+    "cagr": 0.32299922677831727,
+    "sharpe": 0.7543847404043117,
+    "max_drawdown": 0.7073256366330083,
+    "return_dd": 0.4566485506107896,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "static_top10_equal_weight_dca_metrics": {
+    "first_full_rebalance_date": "2016-04-04",
+    "tickers": [
+      "BFTH",
+      "EGCH",
+      "ETEL",
+      "PHDC",
+      "EAST",
+      "OIH",
+      "HRHO",
+      "HELI",
+      "EFID",
+      "AMOC"
+    ],
+    "final_equity": 4100184.8500000006,
+    "total_contributions": 1420000.0,
+    "money_multiple": 2.8874541197183103,
+    "twr_total_return": 2.344489193920982,
+    "cagr": 0.1892916812204164,
+    "sharpe": 0.6847258400119811,
+    "max_drawdown": 0.703130124415688,
+    "return_dd": 0.2692128734744806,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  }
+}

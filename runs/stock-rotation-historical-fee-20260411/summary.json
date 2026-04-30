@@ -1,0 +1,33 @@
+{
+  "strategy_metrics": {
+    "final_equity": 7211704.2299999995,
+    "total_contributions": 1420000.0,
+    "money_multiple": 5.078664950704225,
+    "twr_total_return": 6.0773935475736485,
+    "cagr": 0.32444246168633284,
+    "sharpe": 1.2189955941353499,
+    "max_drawdown": 0.40124548577942576,
+    "return_dd": 0.8085884407050665,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_metrics": {
+    "final_equity": 5488656.48069686,
+    "total_contributions": 1420000.0,
+    "money_multiple": 3.8652510427442675,
+    "twr_total_return": 4.079051007584616,
+    "cagr": 0.26282490665862634,
+    "sharpe": 0.9268347237196243,
+    "max_drawdown": 0.5192050690679424,
+    "return_dd": 0.5062063572114961,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_return": 4.099331423113658,
+  "excess_vs_etf_dca": 1.9983425399890322,
+  "start_date": "2015-02-01",
+  "end_date": "2026-04-05",
+  "universe_size": 31,
+  "membership_snapshots": 2,
+  "fixed_buy_fee_egp": 5.0
+}

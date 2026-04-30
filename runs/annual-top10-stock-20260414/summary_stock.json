@@ -1,0 +1,59 @@
+{
+  "start_date": "2015-01-15",
+  "end_date": "2026-04-05",
+  "top_n": 10,
+  "lookback_bars": 252,
+  "selection_method": "annual_top_n_by_prior_return",
+  "pullback_source_run_id": "dca-pullback-only-20260411",
+  "pullback_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "stock_immediate_metrics": {
+    "final_equity": 7759895.7230364615,
+    "total_contributions": 1430000.0,
+    "money_multiple": 5.426500505619903,
+    "twr_total_return": 5.666355506437115,
+    "cagr": 0.31108747419045857,
+    "sharpe": 0.6126907139530215,
+    "max_drawdown": 0.767551245386814,
+    "return_dd": 0.4052986377915176,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "stock_pullback_metrics": {
+    "final_equity": 13080945.628321698,
+    "total_contributions": 1430000.0,
+    "money_multiple": 9.14751442539979,
+    "twr_total_return": 11.908902703301484,
+    "cagr": 0.440816128064216,
+    "sharpe": 0.986429700943025,
+    "max_drawdown": 0.7759986971601088,
+    "return_dd": 0.5680629744321131,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "stock_pullback_excess_vs_immediate": 6.242547196864369,
+  "etf_dca_metrics": {
+    "final_equity": 5536528.42918123,
+    "total_contributions": 1430000.0,
+    "money_multiple": 3.8716982022246365,
+    "twr_total_return": 4.108628547852023,
+    "cagr": 0.2622024037471724,
+    "sharpe": 0.9260996734907223,
+    "max_drawdown": 0.5191936840961645,
+    "return_dd": 0.5050184772636941,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_return": 4.133653846153846,
+  "selection_years": 12,
+  "coverage_min": 0.8482758620689655,
+  "coverage_under_95_count": 6,
+  "membership_last_effective_date": "2025-02-01"
+}

@@ -1,0 +1,9 @@
+{
+  "created_at": "2026-04-16T19:18:52.353983+00:00",
+  "config_path": "config/stock_rotation_multifactor.yaml",
+  "benchmark_path": "data/normalized/EGX30_ETF.csv",
+  "panel_path": "data/stock_rotation/panel.csv",
+  "rebalance_mode": "monthly",
+  "start_date": "2015-02-01",
+  "end_date": "2026-04-05"
+}

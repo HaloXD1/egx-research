@@ -1,0 +1,197 @@
+{
+  "created_at": "2026-04-29T17:13:49.228865+00:00",
+  "symbols_total": 31,
+  "symbols_with_events": 31,
+  "disclosure_events_loaded": 775,
+  "dividend_actions_loaded": 52,
+  "corporate_actions_loaded": 30,
+  "max_news_items_per_symbol": 100,
+  "symbol_status": [
+    {
+      "symbol": "COMI",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/COMI/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "TMGH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/TMGH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EAST",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EAST/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "FWRY",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/FWRY/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ETEL",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ETEL/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EFIH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EFIH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "HRHO",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/HRHO/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ABUK",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ABUK/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ADIB",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ADIB/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EFID",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EFID/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "VLMR",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/VLMR/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "VLMRA",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "BFTH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "GBCO",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORAS",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "CCAP",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/CCAP/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "PHDC",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/PHDC/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EGAL",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EGAL/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ISPH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "JUFO",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/JUFO/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "MCQE",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORHD",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "AMOC",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORWE",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EMFD",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "RAYA",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/RAYA/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "HELI",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "RMDA",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/RMDA/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "OIH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/OIH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ARCC",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ARCC/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "EGCH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EGCH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    }
+  ]
+}

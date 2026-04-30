@@ -1,0 +1,17 @@
+{
+  "run_id": "kama-cci-atr-alloc-20260411",
+  "top_family": "kama_cci_atr_allocation",
+  "top_params": {
+    "kama_len": 32,
+    "kama_fast": 5,
+    "kama_slow": 57,
+    "cci_len": 29,
+    "cci_threshold": 0.0,
+    "allocation_ladder": "100_60_20",
+    "atr_len": 12,
+    "atr_stop": 2.5,
+    "atr_trail": 2.0
+  },
+  "top_rank_score": -0.0654864319077395,
+  "holdout_excess_return_vs_dca": -0.0654864319077395
+}

@@ -1,0 +1,12 @@
+{
+  "run_id": "fdi-supertrend-20260405",
+  "top_family": "fdi_supertrend",
+  "top_params": {
+    "per": 32,
+    "speed": 5,
+    "mult": 1.0,
+    "adapt": false
+  },
+  "top_rank_score": 2.9555909408175323,
+  "holdout_excess_return_vs_dca": -0.1675837718664115
+}

@@ -1,0 +1,10 @@
+family,parameter,importance
+kama_cci_atr_allocation,cci_threshold,0.33661293799229675
+kama_cci_atr_allocation,atr_trail,0.1377752363380519
+kama_cci_atr_allocation,kama_fast,0.12043206454397641
+kama_cci_atr_allocation,kama_slow,0.11932055477182847
+kama_cci_atr_allocation,allocation_ladder,0.11647887532007557
+kama_cci_atr_allocation,kama_len,0.06362963902118964
+kama_cci_atr_allocation,cci_len,0.06118280009401467
+kama_cci_atr_allocation,atr_stop,0.03370690918683983
+kama_cci_atr_allocation,atr_len,0.010860982731726965

@@ -1,0 +1,4 @@
+family,rank_score,passed_filters,neighbor_pass_rate,wf_cagr,holdout_excess_return_vs_dca,params
+fdi_supertrend,2.9555909408175323,False,0.6,0.4323339239768524,-0.1675837718664115,"{'per': 32, 'speed': 5, 'mult': 1.0, 'adapt': False}"
+fdi_supertrend,2.9555909408175323,False,0.6666666666666666,0.4323339239768524,-0.1675837718664115,"{'per': 32, 'speed': 6, 'mult': 1.0, 'adapt': False}"
+fdi_supertrend,2.9555909408175323,False,0.6666666666666666,0.4323339239768524,-0.1675837718664115,"{'per': 32, 'speed': 6, 'mult': 1.0, 'adapt': False}"

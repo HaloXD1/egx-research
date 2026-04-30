@@ -1,0 +1,6 @@
+family,parameter,importance
+breakout,atr_trail,0.5740139482581198
+breakout,exit_lookback,0.2482703629001186
+breakout,entry_lookback,0.15579254542472357
+breakout,regime_ma,0.014169779514084203
+breakout,atr_stop,0.007753363902953909

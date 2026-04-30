@@ -1,0 +1,78 @@
+{
+  "run_id": "hybrid-filter-egx-20260416",
+  "created_at": "2026-04-16T14:25:56.640104+00:00",
+  "etf_symbol": "EGX30_ETF",
+  "stock_symbols_total": 31,
+  "stock_symbols_evaluated": 31,
+  "window_scheme": "primary",
+  "pullback_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "overlay_params": {
+    "core_weight": 0.8,
+    "kama_len": 35,
+    "kama_fast": 5,
+    "kama_slow": 51,
+    "cci_len": 38,
+    "cci_threshold": 20.0,
+    "sleeve_ladder": "100_60_20",
+    "atr_len": 7,
+    "atr_stop": 4.4,
+    "atr_trail": 2.6
+  },
+  "gate_params": {
+    "blackcat_ichimoku": {
+      "tenkan_len": 7,
+      "kijun_len": 34,
+      "senkou_b_len": 72,
+      "atr_stop": 3.2,
+      "atr_trail": 2.3
+    },
+    "blackcat_ravi": {
+      "fast_len": 6,
+      "slow_len": 44,
+      "bias_len": 147,
+      "ravi_entry": 1.2000000000000002,
+      "atr_stop": 2.0,
+      "atr_trail": 2.6
+    },
+    "blackcat_zlema_band": {
+      "zlema_len": 43,
+      "band_mult": 0.5,
+      "trend_ma": 55,
+      "atr_stop": 3.5,
+      "atr_trail": 3.9000000000000004
+    }
+  },
+  "top_variant": "pullback_base",
+  "top_variant_row": {
+    "variant": "pullback_base",
+    "base_family": "dca_pullback_only",
+    "gate_family": "none",
+    "window_scheme": "primary",
+    "gate_on_ratio": 1.0,
+    "wf_excess_return_vs_dca": -0.183811272570426,
+    "wf_max_drawdown": 0.2834303423252089,
+    "holdout_excess_return_vs_dca": 0.008591421488085116,
+    "holdout_cagr": 0.3815427066238142,
+    "holdout_sharpe": 1.9159487472628043,
+    "holdout_max_drawdown": 0.13440144024136114,
+    "base_params": "{'kama_len': 26, 'kama_fast': 3, 'kama_slow': 52, 'cci_len': 26, 'buy_threshold': -45.0, 'trend_buffer_atr': 1.7000000000000002, 'atr_len': 8}",
+    "gate_params": "{}",
+    "symbols_evaluated": 31,
+    "stock_pass_rate": 0.3870967741935484,
+    "stock_median_holdout_excess_return_vs_dca": -0.04669129328092447,
+    "stock_mean_holdout_excess_return_vs_dca": -0.15142296910556782,
+    "stock_median_holdout_cagr": 0.41496858474930653,
+    "stock_median_holdout_max_drawdown": 0.41739281677615747,
+    "stock_median_gate_on_ratio": 1.0,
+    "overall_score": 0.002064915788499473
+  },
+  "ranking_formula": "0.40 ETF holdout excess + 0.25 stock median holdout excess + 0.15 stock pass rate + 0.10 ETF WF excess + 0.05 ETF holdout CAGR - 0.10 stock median holdout max DD - 0.05 ETF holdout max DD"
+}

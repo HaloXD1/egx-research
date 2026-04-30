@@ -1,0 +1,138 @@
+{
+  "run_id": "relative-ic-etf-20260424",
+  "strategy": "ic_weighted_walk_forward_relative_strength",
+  "target": "future_63d_excess",
+  "benchmark": "EGX30 ETF",
+  "benchmark_path": "data/normalized/EGX30_ETF.csv",
+  "panel_path": "data/stock_rotation/panel.csv",
+  "membership_source": "membership_verified_partial.csv",
+  "start_date": "2019-02-05",
+  "end_date": "2026-04-05",
+  "warmup_months": 36,
+  "target_horizon_days": 63,
+  "top_n": 10,
+  "final_equity": 2628472.2173754526,
+  "twr_total_return": 1.7665430631010404,
+  "cagr": 0.21713749809321548,
+  "sharpe": 0.7883527884693127,
+  "max_drawdown": 0.5581425962951381,
+  "excess_vs_etf_dca": -0.6272083551134133,
+  "total_fees": 77468.86687955,
+  "mean_turnover": 0.49472652512880316,
+  "number_of_rebalances": 84,
+  "average_selected_count": 10.0,
+  "latest_rebalance_date": "2026-04-01",
+  "latest_selected_stocks": [
+    "BFTH",
+    "ISPH",
+    "EAST",
+    "GBCO",
+    "JUFO",
+    "ORWE",
+    "HRHO",
+    "ORHD",
+    "VLMR",
+    "EGCH"
+  ],
+  "latest_top_ranked": [
+    {
+      "rank": 1,
+      "symbol": "BFTH",
+      "ic_score": -0.026773210142612004,
+      "hand_signal_score": 0.0
+    },
+    {
+      "rank": 2,
+      "symbol": "ISPH",
+      "ic_score": -0.08638013260998025,
+      "hand_signal_score": 0.0
+    },
+    {
+      "rank": 3,
+      "symbol": "EAST",
+      "ic_score": -0.11809308834470712,
+      "hand_signal_score": 0.0
+    },
+    {
+      "rank": 4,
+      "symbol": "GBCO",
+      "ic_score": -0.1813776001802082,
+      "hand_signal_score": 0.0
+    },
+    {
+      "rank": 5,
+      "symbol": "JUFO",
+      "ic_score": -0.18784087011823153,
+      "hand_signal_score": 20.0
+    },
+    {
+      "rank": 6,
+      "symbol": "ORWE",
+      "ic_score": -0.19276184015830639,
+      "hand_signal_score": 20.0
+    },
+    {
+      "rank": 7,
+      "symbol": "HRHO",
+      "ic_score": -0.21968358657896858,
+      "hand_signal_score": 20.0
+    },
+    {
+      "rank": 8,
+      "symbol": "ORHD",
+      "ic_score": -0.24585551170782494,
+      "hand_signal_score": 20.0
+    },
+    {
+      "rank": 9,
+      "symbol": "VLMR",
+      "ic_score": -0.2573544185814039,
+      "hand_signal_score": 40.0
+    },
+    {
+      "rank": 10,
+      "symbol": "EGCH",
+      "ic_score": -0.276133658003901,
+      "hand_signal_score": 0.0
+    }
+  ],
+  "strategy_metrics": {
+    "final_equity": 2628472.2173754526,
+    "total_contributions": 940000.0,
+    "money_multiple": 2.79624703976112,
+    "twr_total_return": 1.7665430631010404,
+    "cagr": 0.21713749809321548,
+    "sharpe": 0.7883527884693127,
+    "max_drawdown": 0.5581425962951381,
+    "return_dd": 0.3890358835439898,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_dca_metrics": {
+    "final_equity": 2973968.2510084505,
+    "total_contributions": 940000.0,
+    "money_multiple": 3.1637960117111175,
+    "twr_total_return": 2.3937514182144537,
+    "cagr": 0.26612371513633204,
+    "sharpe": 0.9792414579092253,
+    "max_drawdown": 0.42754520562501774,
+    "return_dd": 0.6224457943512485,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_buy_hold_return": 2.4895424836601308,
+  "costs": {
+    "fee_bps": 20.0,
+    "slippage_bps": 5.0,
+    "fixed_buy_fee_egp": 5.0,
+    "share_precision": 0
+  },
+  "artifact_paths": {
+    "ic_weights": "runs/relative-ic-etf-20260424/ic_weights.csv",
+    "monthly_rankings": "runs/relative-ic-etf-20260424/monthly_rankings.csv",
+    "selected_holdings": "runs/relative-ic-etf-20260424/selected_holdings.csv",
+    "equity_curve": "runs/relative-ic-etf-20260424/equity_curve.csv",
+    "trade_actions": "runs/relative-ic-etf-20260424/trade_actions.csv",
+    "turnover": "runs/relative-ic-etf-20260424/turnover.csv"
+  }
+}

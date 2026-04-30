@@ -1,0 +1,4 @@
+family,rank_score,passed_filters,neighbor_pass_rate,wf_cagr,holdout_excess_return_vs_dca,params
+kama_cci_atr_allocation,-0.0654864319077395,False,0.75,0.6807891521226173,-0.0654864319077395,"{'kama_len': 32, 'kama_fast': 5, 'kama_slow': 57, 'cci_len': 29, 'cci_threshold': 0.0, 'allocation_ladder': '100_60_20', 'atr_len': 12, 'atr_stop': 2.5, 'atr_trail': 2.0}"
+kama_cci_atr_allocation,-0.0654864319077395,False,0.625,0.6659798581137566,-0.0654864319077395,"{'kama_len': 30, 'kama_fast': 5, 'kama_slow': 54, 'cci_len': 29, 'cci_threshold': 0.0, 'allocation_ladder': '100_60_20', 'atr_len': 17, 'atr_stop': 2.6, 'atr_trail': 1.9000000000000001}"
+kama_cci_atr_allocation,-0.0654864319077395,False,0.75,0.6456527089303364,-0.0654864319077395,"{'kama_len': 31, 'kama_fast': 5, 'kama_slow': 55, 'cci_len': 29, 'cci_threshold': 0.0, 'allocation_ladder': '100_60_20', 'atr_len': 15, 'atr_stop': 2.4000000000000004, 'atr_trail': 1.9000000000000001}"

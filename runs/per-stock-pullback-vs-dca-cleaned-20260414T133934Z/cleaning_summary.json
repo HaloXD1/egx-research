@@ -1,0 +1,25 @@
+{
+  "pullback_params_source_run": "dca-pullback-only-20260411",
+  "pullback_params": {
+    "kama_len": 26,
+    "kama_fast": 3,
+    "kama_slow": 52,
+    "cci_len": 26,
+    "buy_threshold": -45.0,
+    "trend_buffer_atr": 1.7000000000000002,
+    "atr_len": 8
+  },
+  "cleaning_rules": [
+    "drop rows where any of open/high/low/close <= 0",
+    "drop rows with missing date/symbol/ohlc",
+    "dedupe symbol/date keep last",
+    "enforce high=max(high,open,close) and low=min(low,open,close)"
+  ],
+  "stocks_tested": 31,
+  "rows_removed_total": 721,
+  "rows_removed_nonpositive_ohlc": 721,
+  "pullback_beats_dca_count": 13,
+  "pullback_loses_to_dca_count": 18,
+  "median_excess_twr": -0.06454420126383775,
+  "mean_excess_twr": 0.809917944701694
+}

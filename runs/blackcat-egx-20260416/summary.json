@@ -1,0 +1,70 @@
+{
+  "run_id": "blackcat-egx-20260416",
+  "created_at": "2026-04-16T14:07:39.381567+00:00",
+  "trials_per_family": 80,
+  "families": [
+    "blackcat_dynamic_momentum",
+    "blackcat_multi_bbands",
+    "blackcat_zlema_band",
+    "blackcat_ichimoku",
+    "blackcat_ravi",
+    "blackcat_cci_rsi",
+    "blackcat_superj"
+  ],
+  "min_stock_bars": 756,
+  "etf_symbol": "EGX30_ETF",
+  "stock_symbols_total": 31,
+  "stock_symbols_evaluated": 31,
+  "top_family": "blackcat_ichimoku",
+  "top_params": {
+    "tenkan_len": 7,
+    "kijun_len": 34,
+    "senkou_b_len": 72,
+    "atr_stop": 3.2,
+    "atr_trail": 2.3
+  },
+  "ranking_formula": "0.30 ETF holdout excess + 0.30 stock median holdout excess + 0.20 stock pass rate + 0.10 ETF neighbor pass + 0.10 ETF WF excess - 0.10 stock median holdout max DD - 0.05 ETF holdout max DD",
+  "sources": {
+    "blackcat_dynamic_momentum": {
+      "title": "[blackcat] L1 Dynamic Momentum Indicator",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only adaptation of K/D momentum crossover plus EMA spread confirmation."
+    },
+    "blackcat_multi_bbands": {
+      "title": "[blackcat] L1 Dynamic Multi-Layer Bollinger Bands",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only pullback-reentry inside layered Bollinger bands."
+    },
+    "blackcat_zlema_band": {
+      "title": "[blackcat] L1 Zero-Lag EMA Band",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only breakout above zero-lag EMA band with trend filter."
+    },
+    "blackcat_ichimoku": {
+      "title": "[blackcat] L1 Ichimoku Cloud with Entry Signals",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only Tenkan/Kijun bullish cross above cloud."
+    },
+    "blackcat_ravi": {
+      "title": "[blackcat] L2 Range Action Verification Index (RAVI) with 3 SMA",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only RAVI trend confirmation above long bias SMA."
+    },
+    "blackcat_cci_rsi": {
+      "title": "[blackcat] L3 CCI-RSI Combo",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only CCI recovery plus RSI confirmation in an uptrend."
+    },
+    "blackcat_superj": {
+      "title": "[blackcat] L3 SuperJ",
+      "url": "https://tr.tradingview.com/scripts/blackcat1402/",
+      "adaptation": "Daily long-only smoothed J-line reversal with trigger cross and trend filter."
+    }
+  },
+  "excluded": [
+    {
+      "title": "[blackcat] L1 MartinGale Scalping Strategy",
+      "reason": "Excluded. Martingale/scalping conflicts with repo daily long-only rule."
+    }
+  ]
+}

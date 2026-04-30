@@ -1,0 +1,16 @@
+family,parameter,importance
+dca_zone_overlay,core_weight,0.7255994403447724
+dca_zone_overlay,kama_slow,0.06013328606450049
+dca_zone_overlay,kama_fast,0.05939597717413902
+dca_zone_overlay,atr_stop,0.028869242719808924
+dca_zone_overlay,atr_len,0.02694821550911175
+dca_zone_overlay,buy_deep,0.026393137945793288
+dca_zone_overlay,atr_trail,0.01267088649596615
+dca_zone_overlay,trim_hard,0.010498257957090057
+dca_zone_overlay,kama_len,0.009602679254527652
+dca_zone_overlay,trim_mild,0.009257395868056706
+dca_zone_overlay,zone_profile,0.00884125163396455
+dca_zone_overlay,cci_len,0.007943601470081895
+dca_zone_overlay,trim_buffer_atr,0.00718704889000029
+dca_zone_overlay,buy_mild,0.004675395929407697
+dca_zone_overlay,trend_buffer_atr,0.0019841827427792835

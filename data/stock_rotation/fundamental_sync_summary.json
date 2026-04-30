@@ -1,0 +1,260 @@
+{
+  "created_at": "2026-04-29T17:14:46.634192+00:00",
+  "symbols_total": 31,
+  "symbols_with_rows": 31,
+  "fundamental_rows_loaded": 733,
+  "quarterly_lag_days": 60,
+  "annual_lag_days": 90,
+  "actual_disclosure_date_overrides": 217,
+  "source": "mubasher_financial_statements",
+  "symbol_status": [
+    {
+      "symbol": "COMI",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/COMI",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/COMI/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 3070851000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "TMGH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/TMGH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/TMGH/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 2060653786.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EAST",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EAST",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EAST/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 3000000000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "FWRY",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/FWRY",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/FWRY/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 3406523244.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ETEL",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ETEL",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ETEL/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 1707071600.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EFIH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EFIH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EFIH/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 3466666667.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "HRHO",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/HRHO",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/HRHO/financial-statements",
+      "rows_loaded": 22,
+      "shares_outstanding": 1459681418.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ABUK",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ABUK",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ABUK/financial-statements",
+      "rows_loaded": 22,
+      "shares_outstanding": 1261875720.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ADIB",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ADIB",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ADIB/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 1200000000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EFID",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EFID",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EFID/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 1400027312.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "VLMR",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/VLMR",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/VLMR/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 830840311.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "VLMRA",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 352389240.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "BFTH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 10718106944.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "GBCO",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 1085500000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORAS",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 110243935.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "CCAP",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/CCAP",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/CCAP/financial-statements",
+      "rows_loaded": 21,
+      "shares_outstanding": 3216472781.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "PHDC",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/PHDC",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/PHDC/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 2859914173.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EGAL",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EGAL",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EGAL/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 412500000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ISPH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 1008000000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "JUFO",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/JUFO",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/JUFO/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 941405082.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "MCQE",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 96000000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORHD",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 1130473523.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "AMOC",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC/financial-statements",
+      "rows_loaded": 22,
+      "shares_outstanding": 1291500000.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORWE",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 665107268.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EMFD",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 5446929384.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "RAYA",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/RAYA",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/RAYA/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 4281297768.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "HELI",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/HELI",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 1335085200.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "RMDA",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/RMDA",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/RMDA/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 1510996292.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "OIH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/OIH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/OIH/financial-statements",
+      "rows_loaded": 21,
+      "shares_outstanding": 5245690620.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ARCC",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ARCC",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ARCC/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 378739700.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "EGCH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EGCH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EGCH/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 1986578999.0,
+      "status": "ok"
+    }
+  ]
+}

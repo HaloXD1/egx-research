@@ -1,0 +1,181 @@
+{
+  "run_id": "stock-strategy-fixed5-20260429",
+  "start_date": "2015-01-15",
+  "end_date": "2026-04-05",
+  "families": [
+    "breakout",
+    "rebound",
+    "news_event_rules"
+  ],
+  "best_family": "rebound",
+  "holdout_start_date": "2024-10-24",
+  "trials_per_family": 25,
+  "etf_dca_metrics": {
+    "final_equity": 5550357.28,
+    "total_contributions": 1430000.0,
+    "money_multiple": 3.8813687272727275,
+    "twr_total_return": 4.138708071208797,
+    "cagr": 0.263260823776053,
+    "sharpe": 0.9289089340601412,
+    "max_drawdown": 0.5188932164064143,
+    "return_dd": 0.5073506753456156,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "etf_holdout_metrics": {
+    "final_equity": 413499.11000000004,
+    "total_contributions": 290000.0,
+    "money_multiple": 1.4258590000000002,
+    "twr_total_return": 0.5655178122757718,
+    "cagr": 0.3783434327937216,
+    "sharpe": 1.8266350265835445,
+    "max_drawdown": 0.13600251111585704,
+    "return_dd": 2.7818856408571793,
+    "profit_factor": 0.0,
+    "closed_trades": 0.0
+  },
+  "family_winners": {
+    "breakout": {
+      "params": {
+        "scan_mode": "monthly",
+        "top_n": 7,
+        "max_positions": 3,
+        "atr_len": 15,
+        "target_atr": 4.759966555035342,
+        "stop_atr": 2.265963917321445,
+        "trail_atr": 4.659735208783627,
+        "max_hold_bars": 24,
+        "lookback": 36,
+        "trend_len": 119,
+        "volume_short": 20,
+        "volume_long": 90,
+        "volume_ratio": 1.05742956219772,
+        "fixed_sell_fee_egp": 5.0
+      },
+      "metrics": {
+        "final_equity": 7019479.73,
+        "total_contributions": 1430000.0,
+        "money_multiple": 4.908727083916085,
+        "twr_total_return": 9.837052797194714,
+        "cagr": 0.40527296424329595,
+        "sharpe": 1.355660315692119,
+        "max_drawdown": 0.407102164071919,
+        "return_dd": 0.9955067794031675,
+        "profit_factor": 2.0281557542018525,
+        "closed_trades": 180.0,
+        "total_fees": 1805.0,
+        "fee_to_contributions_ratio": 0.0012622377622377623,
+        "mean_turnover_pct": 0.06836795603192197
+      },
+      "holdout_metrics": {
+        "final_equity": 7019479.73,
+        "total_contributions": 180000.0,
+        "money_multiple": 38.997109611111114,
+        "twr_total_return": 0.722448132312431,
+        "cagr": 0.475907629213556,
+        "sharpe": 1.8230247556786237,
+        "max_drawdown": 0.11611771596877618,
+        "return_dd": 4.098492854798544,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "passed_constraints": true
+    },
+    "rebound": {
+      "params": {
+        "scan_mode": "monthly",
+        "top_n": 6,
+        "max_positions": 3,
+        "atr_len": 15,
+        "target_atr": 4.482664295015792,
+        "stop_atr": 1.056478065634162,
+        "trail_atr": 4.811367627216187,
+        "max_hold_bars": 38,
+        "trend_len": 100,
+        "rsi_len": 5,
+        "rsi_entry": 44.80609886093903,
+        "rsi_reclaim": 54.98431843581888,
+        "bb_len": 40,
+        "bb_std": 1.8495062824542354,
+        "cci_len": 27,
+        "cci_reclaim": -118.02475902638353,
+        "fixed_sell_fee_egp": 5.0
+      },
+      "metrics": {
+        "final_equity": 8558796.970000003,
+        "total_contributions": 1430000.0,
+        "money_multiple": 5.985172706293708,
+        "twr_total_return": 13.396046443911333,
+        "cagr": 0.46342197755344317,
+        "sharpe": 1.392703621805996,
+        "max_drawdown": 0.4239194590851405,
+        "return_dd": 1.0931840179112158,
+        "profit_factor": 2.015650235950266,
+        "closed_trades": 337.0,
+        "total_fees": 3375.0,
+        "fee_to_contributions_ratio": 0.00236013986013986,
+        "mean_turnover_pct": 0.12706015836363205
+      },
+      "holdout_metrics": {
+        "final_equity": 8558796.970000003,
+        "total_contributions": 180000.0,
+        "money_multiple": 47.54887205555557,
+        "twr_total_return": 1.6922078256447177,
+        "cagr": 1.031976327695141,
+        "sharpe": 3.1147075181691872,
+        "max_drawdown": 0.07476142564447541,
+        "return_dd": 13.803593481518904,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "passed_constraints": true
+    },
+    "news_event_rules": {
+      "params": {
+        "scan_mode": "monthly",
+        "top_n": 9,
+        "max_positions": 3,
+        "atr_len": 14,
+        "target_atr": 5.956962464599611,
+        "stop_atr": 2.7165147324430556,
+        "trail_atr": 3.621130518620906,
+        "max_hold_bars": 77,
+        "event_window_days": 46,
+        "confirm_lookback": 36,
+        "trend_len": 58,
+        "min_event_score": 0.5213843830687009,
+        "volume_short": 30,
+        "volume_long": 61,
+        "fixed_sell_fee_egp": 5.0
+      },
+      "metrics": {
+        "final_equity": 1802813.4400000016,
+        "total_contributions": 1430000.0,
+        "money_multiple": 1.2607086993007004,
+        "twr_total_return": 0.26664117531339016,
+        "cagr": 0.034323737070403926,
+        "sharpe": 0.3139712825409621,
+        "max_drawdown": 0.35197992560287905,
+        "return_dd": 0.09751617797979094,
+        "profit_factor": 1.3383918067820417,
+        "closed_trades": 71.0,
+        "total_fees": 715.0,
+        "fee_to_contributions_ratio": 0.0005,
+        "mean_turnover_pct": 0.026914686638657478
+      },
+      "holdout_metrics": {
+        "final_equity": 1802813.4400000016,
+        "total_contributions": 180000.0,
+        "money_multiple": 10.015630222222232,
+        "twr_total_return": 0.27507367730861376,
+        "cagr": 0.1900183727444944,
+        "sharpe": 1.0577098571765784,
+        "max_drawdown": 0.172060563379708,
+        "return_dd": 1.1043691187105824,
+        "profit_factor": 0.0,
+        "closed_trades": 0.0
+      },
+      "passed_constraints": false
+    }
+  }
+}

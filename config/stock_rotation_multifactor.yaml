@@ -1,0 +1,60 @@
+benchmark:
+  etf_symbol_path: data/normalized/EGX30_ETF.csv
+  index_symbol_path: data/normalized/EGX30_INDEX.csv
+
+storage:
+  root_dir: data/stock_rotation
+  universe_filename: universe.csv
+  panel_filename: panel.csv
+  membership_filename: membership_snapshots.csv
+  fundamentals_filename: fundamentals.csv
+  dividend_actions_filename: dividend_actions.csv
+  corporate_actions_filename: corporate_actions.csv
+  disclosure_events_filename: disclosure_events.csv
+  macro_regime_filename: macro_regime_monthly.csv
+
+portfolio:
+  top_n: 8
+  weighting: equal
+  rebalance: monthly
+  hold_cash_when_few: true
+  fixed_buy_fee_egp: 5.0
+  turnover_buffer_score: 0.03
+
+selection:
+  method: sector_multifactor
+  trend_indicator: KAMA
+  rel_strength_window_3m: 63
+  rel_strength_window_6m: 126
+  liquidity_window_bars: 63
+  min_median_daily_value_egp: 100000.0
+  min_median_daily_volume: 1000.0
+  use_total_return_features: true
+  require_long_term_trend: true
+  max_drawdown_252: 0.60
+  max_sector_weight: 0.40
+  max_position_weight: 0.15
+  score_weights:
+    return_3m_rank: 0.5
+    return_6m_rank: 0.3
+    rel_strength_spread_3m: 0.2
+  factor_weights:
+    momentum: 0.30
+    value: 0.20
+    quality: 0.20
+    growth: 0.10
+    low_risk: 0.10
+    liquidity: 0.10
+
+validation:
+  min_history_bars: 756
+  coverage_lookback_bars: 126
+  min_coverage_ratio: 0.92
+
+model_selection:
+  holdout_ratio: 0.2
+  min_holdout_excess_return: 0.0
+  max_drawdown: 0.8
+  min_neighbor_pass_rate: 0.6
+  max_mean_rebalance_turnover_pct: 0.95
+  max_fee_to_contributions_ratio: 0.2

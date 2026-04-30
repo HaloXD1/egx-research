@@ -1,0 +1,64 @@
+sources:
+  etf_rebalancing_url: https://www.egx30etf.com/Content/Excel%20Files/ETF_Rebalancing.xlsx
+  mubasher_stock_url_template: https://english.mubasher.info/markets/EGX/stocks/{ticker}
+  mubasher_financial_statements_path: financial-statements
+  mubasher_company_search_url: https://english.mubasher.info/api/1/companySearch
+  fundamental_quarterly_lag_days: 60
+  fundamental_annual_lag_days: 90
+benchmark:
+  etf_symbol_path: data/normalized/EGX30_ETF.csv
+  index_symbol_path: data/normalized/EGX30_INDEX.csv
+backtest:
+  initial_cash: 100000.0
+  monthly_contribution: 10000.0
+  fee_bps: 20.0
+  slippage_bps: 5.0
+  share_precision: 0
+storage:
+  root_dir: data/stock_rotation
+  universe_filename: universe.csv
+  panel_filename: panel.csv
+  membership_filename: membership_snapshots.csv
+  fundamentals_filename: fundamentals.csv
+  dividend_actions_filename: dividend_actions.csv
+  corporate_actions_filename: corporate_actions.csv
+  disclosure_events_filename: disclosure_events.csv
+  macro_regime_filename: macro_regime_monthly.csv
+  raw_dir: raw
+  normalized_dir: normalized
+portfolio:
+  top_n: 10
+  weighting: equal
+  rebalance: monthly
+  hold_cash_when_few: true
+  fixed_buy_fee_egp: 5.0
+  turnover_buffer_score: 0.03
+selection:
+  method: relative_strength
+  trend_indicator: KAMA
+  rel_strength_window_3m: 63
+  rel_strength_window_6m: 126
+  liquidity_window_bars: 63
+  min_median_daily_value_egp: 100000.0
+  min_median_daily_volume: 1000.0
+  score_weights:
+    return_3m_rank: 0.5
+    return_6m_rank: 0.3
+    rel_strength_spread_3m: 0.2
+  factor_weights:
+    momentum: 0.35
+    value: 0.2
+    quality: 0.2
+    low_risk: 0.15
+    liquidity: 0.1
+validation:
+  min_history_bars: 756
+  coverage_lookback_bars: 126
+  min_coverage_ratio: 0.92
+model_selection:
+  holdout_ratio: 0.2
+  min_holdout_excess_return: 0.0
+  max_drawdown: 0.8
+  min_neighbor_pass_rate: 0.6
+  max_mean_rebalance_turnover_pct: 0.95
+  max_fee_to_contributions_ratio: 0.2
