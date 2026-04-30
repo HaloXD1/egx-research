@@ -379,3 +379,65 @@ def test_stock_strategy_v3_cli_smoke(tmp_path, monkeypatch) -> None:
     assert (run_dir / "actions.csv").exists()
     assert (run_dir / "market_regime.csv").exists()
     assert (run_dir / "factor_scores.csv").exists()
+
+
+def test_stock_strategy_robustness_cli_smoke(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "data/normalized").mkdir(parents=True)
+    (tmp_path / "data/stock_rotation").mkdir(parents=True)
+
+    etf = make_synthetic_ohlcv(rows=420, seed=43)
+    etf.to_csv(tmp_path / "data/normalized/EGX30_ETF.csv", index=False)
+    index = make_synthetic_ohlcv(rows=420, seed=44)
+    index.to_csv(tmp_path / "data/normalized/EGX30_INDEX.csv", index=False)
+    panel = _panel(["AAA", "BBB", "CCC", "DDD", "EEE"], rows=420)
+    panel.to_csv(tmp_path / "data/stock_rotation/panel.csv", index=False)
+    pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+            "effective_date": [pd.Timestamp("2020-01-01")] * 5,
+            "is_member": [True, True, True, True, True],
+        }
+    ).to_csv(tmp_path / "data/stock_rotation/membership_snapshots.csv", index=False)
+    (tmp_path / "config/stock_rotation_multifactor.yaml").write_text(
+        "\n".join(
+            [
+                "benchmark:",
+                "  etf_symbol_path: data/normalized/EGX30_ETF.csv",
+                "  index_symbol_path: data/normalized/EGX30_INDEX.csv",
+                "storage:",
+                "  root_dir: data/stock_rotation",
+                "backtest:",
+                "  initial_cash: 10000.0",
+                "  monthly_contribution: 1000.0",
+                "selection:",
+                "  method: sector_multifactor",
+                "  require_long_term_trend: true",
+                "  max_drawdown_252: 1.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "stock-strategy-robustness",
+            "--config",
+            "config/stock_rotation_multifactor.yaml",
+            "--train-end",
+            "2020-12-31",
+            "--start-samples",
+            "2",
+            "--run-id",
+            "strategy-robustness-smoke",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    run_dir = Path("runs/strategy-robustness-smoke")
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "strategy_comparison.csv").exists()
+    assert (run_dir / "cost_stress.csv").exists()
+    assert (run_dir / "robustness_report.md").exists()

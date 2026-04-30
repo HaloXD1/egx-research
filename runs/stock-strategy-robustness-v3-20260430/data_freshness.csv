@@ -1,0 +1,5 @@
+dataset,rows,start_date,end_date,days_stale,status,latest_filing_date
+etf,1766,2015-01-15,2026-04-05,25,stale,
+egx_index,6901,1998-01-04,2026-04-30,0,fresh,
+stock_panel,77069,2015-01-15,2026-04-09,21,stale,
+fundamentals,733,2020-12-31,2026-12-31,-305,future_filing_date,2027-03-01

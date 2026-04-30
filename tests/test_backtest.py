@@ -14,6 +14,25 @@ def test_contribution_schedule_uses_first_trading_day_in_slice() -> None:
     assert schedule.iloc[2] == 50.0
 
 
+def test_contribution_schedule_can_offset_monthly_day() -> None:
+    dates = pd.Series(
+        pd.to_datetime(
+            ["2024-01-15", "2024-01-16", "2024-02-01", "2024-02-02"]
+        )
+    )
+    schedule = build_contribution_schedule(
+        dates,
+        0,
+        3,
+        initial_cash=100.0,
+        monthly_contribution=50.0,
+        monthly_day_offset=1,
+    )
+    assert schedule.iloc[0] == 100.0
+    assert schedule.iloc[1] == 50.0
+    assert schedule.iloc[3] == 50.0
+
+
 def test_strategy_backtest_applies_next_open_fill_and_costs() -> None:
     frame = pd.DataFrame(
         {

@@ -1,0 +1,129 @@
+{
+  "run_id": "stock-strategy-robustness-v3-20260430",
+  "created_at": "2026-04-30T09:45:45.794142+00:00",
+  "train_end": "2023-12-31",
+  "checks": {
+    "strategy_comparison_rows": 8,
+    "yearly_rows": 48,
+    "cost_stress_rows": 6,
+    "start_date_rows": 13,
+    "contribution_day_rows": 12
+  },
+  "v3_oos": {
+    "strategy": "rebound_max5_v3",
+    "period": "oos",
+    "start_date": "2024-01-02",
+    "end_date": "2026-04-05",
+    "twr": 1.2447217797,
+    "cagr": 0.4533572946,
+    "max_drawdown": 0.2374738897,
+    "sharpe": 2.3089986852,
+    "return_dd": 1.9090827002,
+    "money_multiple": 16.5468533021,
+    "closed_trades": 108.0,
+    "excess_twr_vs_etf_dca": 0.3095288384,
+    "excess_cagr_vs_etf_dca": 0.0963658979,
+    "fee_to_contributions_ratio": 0.2960990257,
+    "mean_turnover_pct": 0.0684710445
+  },
+  "v3_cost_stress_oos": [
+    {
+      "strategy": "rebound_max5_v3",
+      "period": "oos",
+      "start_date": "2024-01-02",
+      "end_date": "2026-04-05",
+      "twr": 1.2447217797,
+      "cagr": 0.4533572946,
+      "max_drawdown": 0.2374738897,
+      "sharpe": 2.3089986852,
+      "return_dd": 1.9090827002,
+      "money_multiple": 16.5468533021,
+      "closed_trades": 108.0,
+      "excess_twr_vs_etf_dca": 0.3095288384,
+      "excess_cagr_vs_etf_dca": 0.0963658979,
+      "cost_multiplier": 1.0,
+      "fee_bps": 20.0,
+      "slippage_bps": 5.0,
+      "fixed_fee_egp": 5.0,
+      "fee_to_contributions_ratio": 0.2960990257
+    },
+    {
+      "strategy": "rebound_max5_v3",
+      "period": "oos",
+      "start_date": "2024-01-02",
+      "end_date": "2026-04-05",
+      "twr": 1.0147728513,
+      "cagr": 0.3825144473,
+      "max_drawdown": 0.2484056309,
+      "sharpe": 2.0097053618,
+      "return_dd": 1.5398783271,
+      "money_multiple": 13.2733889014,
+      "closed_trades": 108.0,
+      "excess_twr_vs_etf_dca": 0.0848698745,
+      "excess_cagr_vs_etf_dca": 0.0272394925,
+      "cost_multiplier": 2.0,
+      "fee_bps": 40.0,
+      "slippage_bps": 10.0,
+      "fixed_fee_egp": 10.0,
+      "fee_to_contributions_ratio": 0.5161672609
+    },
+    {
+      "strategy": "rebound_max5_v3",
+      "period": "oos",
+      "start_date": "2024-01-02",
+      "end_date": "2026-04-05",
+      "twr": 0.8076964164,
+      "cagr": 0.3148949443,
+      "max_drawdown": 0.2608270453,
+      "sharpe": 1.7083959055,
+      "return_dd": 1.207294067,
+      "money_multiple": 10.5413746053,
+      "closed_trades": 109.0,
+      "excess_twr_vs_etf_dca": -0.1170234696,
+      "excess_cagr_vs_etf_dca": -0.0386957913,
+      "cost_multiplier": 3.0,
+      "fee_bps": 60.0,
+      "slippage_bps": 15.0,
+      "fixed_fee_egp": 15.0,
+      "fee_to_contributions_ratio": 0.67324295
+    }
+  ],
+  "data_freshness": [
+    {
+      "dataset": "etf",
+      "rows": 1766,
+      "start_date": "2015-01-15",
+      "end_date": "2026-04-05",
+      "days_stale": 25,
+      "status": "stale",
+      "latest_filing_date": null
+    },
+    {
+      "dataset": "egx_index",
+      "rows": 6901,
+      "start_date": "1998-01-04",
+      "end_date": "2026-04-30",
+      "days_stale": 0,
+      "status": "fresh",
+      "latest_filing_date": null
+    },
+    {
+      "dataset": "stock_panel",
+      "rows": 77069,
+      "start_date": "2015-01-15",
+      "end_date": "2026-04-09",
+      "days_stale": 21,
+      "status": "stale",
+      "latest_filing_date": null
+    },
+    {
+      "dataset": "fundamentals",
+      "rows": 733,
+      "start_date": "2020-12-31",
+      "end_date": "2026-12-31",
+      "days_stale": -305,
+      "status": "future_filing_date",
+      "latest_filing_date": "2027-03-01"
+    }
+  ]
+}

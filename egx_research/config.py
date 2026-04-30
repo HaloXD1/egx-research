@@ -23,6 +23,7 @@ class DataConfig:
 class BacktestConfig:
     initial_cash: float = 100000.0
     monthly_contribution: float = 10000.0
+    monthly_contribution_day_offset: int = 0
     fee_bps: float = 20.0
     slippage_bps: float = 5.0
     share_precision: int = 0

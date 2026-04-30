@@ -30,18 +30,21 @@ def build_contribution_schedule(
     end_idx: int,
     initial_cash: float,
     monthly_contribution: float,
+    monthly_day_offset: int = 0,
 ) -> pd.Series:
     schedule = pd.Series(0.0, index=range(len(dates)), dtype=float)
     schedule.iloc[start_idx] += float(initial_cash)
 
-    seen_months: set[tuple[int, int]] = set()
+    month_indices: dict[tuple[int, int], list[int]] = {}
     for i in range(start_idx, end_idx + 1):
         date = pd.Timestamp(dates.iloc[i])
         key = (date.year, date.month)
-        if key in seen_months:
-            continue
-        seen_months.add(key)
-        schedule.iloc[i] += float(monthly_contribution)
+        month_indices.setdefault(key, []).append(i)
+    offset = max(0, int(monthly_day_offset))
+    for indices in month_indices.values():
+        schedule.iloc[indices[min(offset, len(indices) - 1)]] += float(
+            monthly_contribution
+        )
     return schedule
 
 
@@ -152,6 +155,7 @@ def _run_allocation_backtest(
         end_idx,
         initial_cash=config.initial_cash,
         monthly_contribution=config.monthly_contribution,
+        monthly_day_offset=config.monthly_contribution_day_offset,
     )
     equity = pd.Series(np.nan, index=strategy_frame.index, dtype=float)
     flows = pd.Series(0.0, index=strategy_frame.index, dtype=float)
@@ -311,6 +315,7 @@ def _run_cash_deploy_backtest(
         end_idx,
         initial_cash=config.initial_cash,
         monthly_contribution=config.monthly_contribution,
+        monthly_day_offset=config.monthly_contribution_day_offset,
     )
     equity = pd.Series(np.nan, index=strategy_frame.index, dtype=float)
     flows = pd.Series(0.0, index=strategy_frame.index, dtype=float)
@@ -382,6 +387,7 @@ def run_strategy_backtest(
         end_idx,
         initial_cash=config.initial_cash,
         monthly_contribution=config.monthly_contribution,
+        monthly_day_offset=config.monthly_contribution_day_offset,
     )
     equity = pd.Series(np.nan, index=strategy_frame.index, dtype=float)
     flows = pd.Series(0.0, index=strategy_frame.index, dtype=float)
@@ -498,6 +504,7 @@ def run_dca_benchmark(data: pd.DataFrame, start_idx: int, end_idx: int, config: 
         end_idx,
         initial_cash=config.initial_cash,
         monthly_contribution=config.monthly_contribution,
+        monthly_day_offset=config.monthly_contribution_day_offset,
     )
 
     cash = 0.0

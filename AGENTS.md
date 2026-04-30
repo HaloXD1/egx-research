@@ -35,6 +35,7 @@
 - Stock report: `egx stock-rotate-report --run-id <run_id>`
 - Stock strategy v2: `egx stock-strategy-v2 --config config/stock_rotation.yaml --run-id <run_id>`
 - Stock strategy v3: `egx stock-strategy-v3 --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
+- Stock strategy robustness: `egx stock-strategy-robustness --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
 - Paper track: `egx paper-track --model-run-id <run_id> --start-date YYYY-MM-DD`
 
 ## Repo Rules
@@ -102,9 +103,11 @@
   - v2 final run: `runs/rebound-max5-v2-final-20260430/`
   - v3 final run: `runs/rebound-max5-v3-final-20260430/`
   - v3 variant lab: `runs/rebound-max5-v3-variant-lab-20260430/`
+  - v3 robustness pack: `runs/stock-strategy-robustness-v3-20260430/`
   - current preferred stock strategy: `rebound_max5_v3`
   - v3 uses point-in-time sector multifactor rank + ETF/index/breadth regime filter
   - v3 OOS vs v2: higher TWR/CAGR/Sharpe and lower max DD, but lower full-period CAGR
+  - robustness caveats: ETF/panel data stale vs index; fundamentals include future filing dates and need QA before live use
 
 ## Notes For Agents
 
@@ -119,4 +122,4 @@
   - current official ETF workbook snapshot
   - verified partial review deltas from public articles
 - Treat stock-rotation results before full historical membership reconstruction as provisional.
-- Treat v3 as promising but still needing robustness stress before live/paper use.
+- Treat v3 as promising but not live-ready until stale ETF/panel data and future-dated fundamentals are fixed.

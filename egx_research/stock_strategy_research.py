@@ -461,6 +461,7 @@ def simulate_event_driven_strategy(
         len(dates) - 1,
         config.backtest.initial_cash,
         config.backtest.monthly_contribution,
+        monthly_day_offset=config.backtest.monthly_contribution_day_offset,
     )
 
     cash = 0.0

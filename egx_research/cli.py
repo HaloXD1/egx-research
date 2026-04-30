@@ -33,6 +33,7 @@ from egx_research.stock_rotation_reporting import (
     generate_stock_selection_report,
 )
 from egx_research.stock_strategy_research import run_stock_strategy_research
+from egx_research.stock_strategy_robustness import run_stock_strategy_robustness
 from egx_research.stock_strategy_validation import (
     run_rebound_max5_v2,
     run_rebound_max5_v3,
@@ -701,6 +702,34 @@ def stock_strategy_v3(
         run_id=run_id,
     )
     typer.echo(f"stock_strategy_v3_run={run.run_dir}")
+
+
+@app.command("stock-strategy-robustness")
+def stock_strategy_robustness(
+    config_path: Path = typer.Option(
+        Path("config/stock_rotation_multifactor.yaml"),
+        "--config",
+        help="Stock rotation multifactor config path.",
+    ),
+    train_end: str = typer.Option(
+        "2023-12-31",
+        "--train-end",
+        help="Train/test split marker YYYY-MM-DD.",
+    ),
+    start_samples: int = typer.Option(
+        12,
+        "--start-samples",
+        help="Deterministic random start-date samples.",
+    ),
+    run_id: str | None = typer.Option(None, "--run-id", help="Run id override."),
+) -> None:
+    run = run_stock_strategy_robustness(
+        config_path=config_path,
+        train_end=train_end,
+        start_samples=start_samples,
+        run_id=run_id,
+    )
+    typer.echo(f"stock_strategy_robustness_run={run.run_dir}")
 
 
 if __name__ == "__main__":
