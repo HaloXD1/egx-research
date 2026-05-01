@@ -16,7 +16,7 @@ from egx_research.core_satellite import run_core_satellite_backtest
 from egx_research.data import ingest_source
 from egx_research.hybrid_filter_research import run_hybrid_filter_research
 from egx_research.optimization import optimize_run
-from egx_research.paper_tracking import paper_track_run
+from egx_research.paper_tracking import paper_track_run, paper_track_stock_strategy
 from egx_research.relative_ic import run_relative_ic_backtest
 from egx_research.relative_signal import run_relative_signal
 from egx_research.reporting import generate_report
@@ -38,6 +38,7 @@ from egx_research.stock_strategy_validation import (
     run_rebound_max5_v2,
     run_rebound_max5_v3,
     run_rebound_max5_v4,
+    run_rebound_max5_v5,
     run_stock_strategy_validation,
 )
 from egx_research.stock_momentum_pyramid import (
@@ -102,8 +103,11 @@ def report(
 
 @app.command("paper-track")
 def paper_track(
-    model_run_id: str = typer.Option(
-        ..., "--model-run-id", help="Run id to source best model from."
+    model_run_id: str | None = typer.Option(
+        None, "--model-run-id", help="Run id to source best ETF model from."
+    ),
+    strategy: str | None = typer.Option(
+        None, "--strategy", help="Stock strategy to paper-track, e.g. rebound_max5_v5."
     ),
     start_date: str = typer.Option(
         ..., "--start-date", help="Paper tracking start date YYYY-MM-DD."
@@ -114,13 +118,34 @@ def paper_track(
     out_run_id: str | None = typer.Option(
         None, "--run-id", help="Output run id override."
     ),
+    stock_config_path: Path = typer.Option(
+        Path("config/stock_rotation_multifactor.yaml"),
+        "--stock-config",
+        help="Stock strategy config path.",
+    ),
+    max_data_stale_days: int = typer.Option(
+        7,
+        "--max-data-stale-days",
+        help="Block stock paper trade instructions if data is older than this.",
+    ),
 ) -> None:
-    run_dir = paper_track_run(
-        model_run_id=model_run_id,
-        start_date=start_date,
-        config_path=config_path,
-        out_run_id=out_run_id,
-    )
+    if strategy:
+        run_dir = paper_track_stock_strategy(
+            strategy=strategy,
+            start_date=start_date,
+            config_path=stock_config_path,
+            out_run_id=out_run_id,
+            max_data_stale_days=max_data_stale_days,
+        )
+    else:
+        if model_run_id is None:
+            raise typer.BadParameter("--model-run-id is required unless --strategy is set.")
+        run_dir = paper_track_run(
+            model_run_id=model_run_id,
+            start_date=start_date,
+            config_path=config_path,
+            out_run_id=out_run_id,
+        )
     typer.echo(f"paper_track={run_dir}")
 
 
@@ -722,12 +747,18 @@ def stock_strategy_robustness(
         "--start-samples",
         help="Deterministic random start-date samples.",
     ),
+    target_strategy: str = typer.Option(
+        "rebound_max5_v4",
+        "--target-strategy",
+        help="Strategy to stress in cost/start/contribution tests.",
+    ),
     run_id: str | None = typer.Option(None, "--run-id", help="Run id override."),
 ) -> None:
     run = run_stock_strategy_robustness(
         config_path=config_path,
         train_end=train_end,
         start_samples=start_samples,
+        target_strategy=target_strategy,
         run_id=run_id,
     )
     typer.echo(f"stock_strategy_robustness_run={run.run_dir}")
@@ -759,6 +790,34 @@ def stock_strategy_v4(
         run_id=run_id,
     )
     typer.echo(f"stock_strategy_v4_run={run.run_dir}")
+
+
+@app.command("stock-strategy-v5")
+def stock_strategy_v5(
+    config_path: Path = typer.Option(
+        Path("config/stock_rotation_multifactor.yaml"),
+        "--config",
+        help="Stock rotation multifactor config path.",
+    ),
+    train_end: str = typer.Option(
+        "2023-12-31",
+        "--train-end",
+        help="Train/test split marker YYYY-MM-DD.",
+    ),
+    max_candidates: int = typer.Option(
+        16,
+        "--max-candidates",
+        help="Max deterministic v5 robustness candidates.",
+    ),
+    run_id: str | None = typer.Option(None, "--run-id", help="Run id override."),
+) -> None:
+    run = run_rebound_max5_v5(
+        config_path=config_path,
+        train_end=train_end,
+        max_candidates=max_candidates,
+        run_id=run_id,
+    )
+    typer.echo(f"stock_strategy_v5_run={run.run_dir}")
 
 
 if __name__ == "__main__":

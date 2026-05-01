@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,8 @@ def to_native(value: Any) -> Any:
         if np.isinf(value):
             return "inf" if value > 0 else "-inf"
         return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
     return value
 
 

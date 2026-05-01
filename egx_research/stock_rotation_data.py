@@ -127,7 +127,9 @@ def parse_mubasher_history_csv(csv_text: str) -> pd.DataFrame:
     frame["date"] = pd.to_datetime(frame["date"].str.split("/").str[0], errors="coerce")
     for column in ("open", "high", "low", "close", "volume"):
         frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    frame = frame.dropna(subset=["date", "open", "high", "low", "close"]).sort_values("date").reset_index(drop=True)
+    frame = frame.dropna(subset=["date", "open", "high", "low", "close"])
+    frame = frame[(frame[["open", "high", "low", "close"]] > 0.0).all(axis=1)]
+    frame = frame.drop_duplicates(subset=["date"], keep="last").sort_values("date").reset_index(drop=True)
     frame["high"] = frame[["high", "open", "close"]].max(axis=1)
     frame["low"] = frame[["low", "open", "close"]].min(axis=1)
     frame["volume"] = frame["volume"].fillna(0.0)
@@ -524,6 +526,37 @@ def apply_actual_disclosure_dates(
     return merged.reindex(columns=fundamentals.columns), int(matched.sum())
 
 
+def filter_future_fundamentals(
+    fundamentals: pd.DataFrame, as_of: pd.Timestamp | datetime
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    as_of_date = pd.Timestamp(as_of)
+    if as_of_date.tzinfo is not None:
+        as_of_date = as_of_date.tz_convert(None)
+    as_of_date = as_of_date.normalize()
+
+    if fundamentals.empty:
+        return fundamentals.copy(), {
+            "fundamental_as_of_date": str(as_of_date.date()),
+            "future_period_rows_removed": 0,
+            "future_filing_rows_removed": 0,
+            "future_rows_removed_total": 0,
+        }
+
+    frame = fundamentals.copy()
+    period_end = pd.to_datetime(frame["period_end"], errors="coerce")
+    filing_date = pd.to_datetime(frame["filing_date"], errors="coerce")
+    future_period = period_end > as_of_date
+    future_filing = filing_date > as_of_date
+    future_any = future_period | future_filing
+    filtered = frame.loc[~future_any].copy()
+    return filtered.reindex(columns=fundamentals.columns), {
+        "fundamental_as_of_date": str(as_of_date.date()),
+        "future_period_rows_removed": int(future_period.sum()),
+        "future_filing_rows_removed": int(future_filing.sum()),
+        "future_rows_removed_total": int(future_any.sum()),
+    }
+
+
 def _currency_code(value: object) -> str:
     text = str(value or "").upper()
     match = re.search(r"\(([A-Z]{3})\)", text)
@@ -722,9 +755,12 @@ def parse_mubasher_financial_statements(
     )
 
 
-def sync_stock_fundamentals(config: StockRotationConfig) -> Path:
+def sync_stock_fundamentals(
+    config: StockRotationConfig, *, as_of: pd.Timestamp | datetime | None = None
+) -> Path:
     root_dir = Path(config.storage.root_dir)
     root_dir.mkdir(parents=True, exist_ok=True)
+    as_of = as_of or datetime.now(UTC)
     universe_path = root_dir / config.storage.universe_filename
     if not universe_path.exists():
         raise FileNotFoundError(f"Universe missing: {universe_path}")
@@ -801,6 +837,14 @@ def sync_stock_fundamentals(config: StockRotationConfig) -> Path:
             .sort_values(["symbol", "period_end", "filing_date", "fiscal_period"])
             .reset_index(drop=True)
         )
+    fundamentals, future_filter_stats = filter_future_fundamentals(
+        fundamentals, as_of
+    )
+    fundamentals = (
+        fundamentals.reindex(columns=REQUIRED_COLUMNS)
+        .sort_values(["symbol", "period_end", "filing_date", "fiscal_period"])
+        .reset_index(drop=True)
+    )
     fundamentals.to_csv(root_dir / config.storage.fundamentals_filename, index=False)
 
     write_json(
@@ -815,6 +859,7 @@ def sync_stock_fundamentals(config: StockRotationConfig) -> Path:
             "quarterly_lag_days": int(config.sources.fundamental_quarterly_lag_days),
             "annual_lag_days": int(config.sources.fundamental_annual_lag_days),
             "actual_disclosure_date_overrides": int(actual_date_overrides),
+            **future_filter_stats,
             "source": "mubasher_financial_statements",
             "symbol_status": summary_rows,
         },

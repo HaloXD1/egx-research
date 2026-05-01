@@ -503,6 +503,11 @@ def test_stock_strategy_robustness_cli_smoke(tmp_path, monkeypatch) -> None:
     assert (run_dir / "strategy_comparison.csv").exists()
     assert (run_dir / "cost_stress.csv").exists()
     assert (run_dir / "robustness_report.md").exists()
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["target_strategy"] == "rebound_max5_v4"
+    comparison = pd.read_csv(run_dir / "strategy_comparison.csv")
+    assert "rebound_max5_v4" in set(comparison["strategy"])
+    assert "rebound_max5_v5" in set(comparison["strategy"])
 
 
 def test_stock_strategy_v4_cli_smoke(tmp_path, monkeypatch) -> None:
@@ -562,3 +567,129 @@ def test_stock_strategy_v4_cli_smoke(tmp_path, monkeypatch) -> None:
     assert (run_dir / "summary.json").exists()
     assert (run_dir / "actions.csv").exists()
     assert (run_dir / "v4_feature_audit.csv").exists()
+
+
+def test_stock_strategy_v5_cli_smoke(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "data/normalized").mkdir(parents=True)
+    (tmp_path / "data/stock_rotation").mkdir(parents=True)
+
+    etf = make_synthetic_ohlcv(rows=420, seed=63)
+    etf.to_csv(tmp_path / "data/normalized/EGX30_ETF.csv", index=False)
+    index = make_synthetic_ohlcv(rows=420, seed=64)
+    index.to_csv(tmp_path / "data/normalized/EGX30_INDEX.csv", index=False)
+    panel = _panel(["AAA", "BBB", "CCC", "DDD", "EEE"], rows=420)
+    panel.to_csv(tmp_path / "data/stock_rotation/panel.csv", index=False)
+    pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+            "effective_date": [pd.Timestamp("2020-01-01")] * 5,
+            "is_member": [True, True, True, True, True],
+        }
+    ).to_csv(tmp_path / "data/stock_rotation/membership_snapshots.csv", index=False)
+    (tmp_path / "config/stock_rotation_multifactor.yaml").write_text(
+        "\n".join(
+            [
+                "benchmark:",
+                "  etf_symbol_path: data/normalized/EGX30_ETF.csv",
+                "  index_symbol_path: data/normalized/EGX30_INDEX.csv",
+                "storage:",
+                "  root_dir: data/stock_rotation",
+                "backtest:",
+                "  initial_cash: 10000.0",
+                "  monthly_contribution: 1000.0",
+                "selection:",
+                "  method: sector_multifactor",
+                "  require_long_term_trend: true",
+                "  max_drawdown_252: 1.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "stock-strategy-v5",
+            "--config",
+            "config/stock_rotation_multifactor.yaml",
+            "--train-end",
+            "2020-12-31",
+            "--max-candidates",
+            "2",
+            "--run-id",
+            "strategy-v5-smoke",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    run_dir = Path("runs/strategy-v5-smoke")
+    assert (run_dir / "summary.json").exists()
+    assert (run_dir / "candidate_scores.csv").exists()
+    assert (run_dir / "v5_feature_audit.csv").exists()
+    summary = json.loads((run_dir / "summary.json").read_text())
+    assert summary["strategy"] == "rebound_max5_v5"
+
+
+def test_stock_strategy_paper_track_v5_cli_smoke(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "data/normalized").mkdir(parents=True)
+    (tmp_path / "data/stock_rotation").mkdir(parents=True)
+
+    etf = make_synthetic_ohlcv(rows=420, seed=73)
+    etf.to_csv(tmp_path / "data/normalized/EGX30_ETF.csv", index=False)
+    index = make_synthetic_ohlcv(rows=420, seed=74)
+    index.to_csv(tmp_path / "data/normalized/EGX30_INDEX.csv", index=False)
+    panel = _panel(["AAA", "BBB", "CCC", "DDD", "EEE"], rows=420)
+    panel.to_csv(tmp_path / "data/stock_rotation/panel.csv", index=False)
+    pd.DataFrame(
+        {
+            "symbol": ["AAA", "BBB", "CCC", "DDD", "EEE"],
+            "effective_date": [pd.Timestamp("2020-01-01")] * 5,
+            "is_member": [True, True, True, True, True],
+        }
+    ).to_csv(tmp_path / "data/stock_rotation/membership_snapshots.csv", index=False)
+    (tmp_path / "config/stock_rotation_multifactor.yaml").write_text(
+        "\n".join(
+            [
+                "benchmark:",
+                "  etf_symbol_path: data/normalized/EGX30_ETF.csv",
+                "  index_symbol_path: data/normalized/EGX30_INDEX.csv",
+                "storage:",
+                "  root_dir: data/stock_rotation",
+                "backtest:",
+                "  initial_cash: 10000.0",
+                "  monthly_contribution: 1000.0",
+                "selection:",
+                "  method: sector_multifactor",
+                "  require_long_term_trend: true",
+                "  max_drawdown_252: 1.0",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "paper-track",
+            "--strategy",
+            "rebound_max5_v5",
+            "--start-date",
+            "2020-12-31",
+            "--stock-config",
+            "config/stock_rotation_multifactor.yaml",
+            "--run-id",
+            "paper-v5-smoke",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    run_dir = Path("runs/paper-v5-smoke")
+    assert (run_dir / "paper_track_summary.json").exists()
+    assert (run_dir / "target_holdings.csv").exists()
+    assert (run_dir / "latest_setups.csv").exists()
+    summary = json.loads((run_dir / "paper_track_summary.json").read_text())
+    assert summary["strategy"] == "rebound_max5_v5"

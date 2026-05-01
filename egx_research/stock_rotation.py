@@ -49,6 +49,7 @@ SECTOR_BY_SYMBOL = {
     "COMI": "banks",
     "HRHO": "financials",
     "BFTH": "financials",
+    "BTFH": "financials",
     "CCAP": "financials",
     "TMGH": "real_estate",
     "PHDC": "real_estate",

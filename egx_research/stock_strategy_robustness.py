@@ -31,12 +31,16 @@ from egx_research.stock_strategy_validation import (
     REBOUND_MAX5_V1_PARAMS,
     REBOUND_MAX5_V2_PARAMS,
     REBOUND_MAX5_V3_PARAMS,
+    REBOUND_MAX5_V4_PARAMS,
+    REBOUND_MAX5_V5_PARAMS,
+    _clean_future_fundamentals_for_run,
     _date_index,
     _period_benchmark_metrics,
     _slice_metrics,
     build_market_regime_filter,
     build_market_regime_filter_v3,
     build_rebound_v3_feature_panel,
+    build_rebound_v4_feature_panel,
 )
 from egx_research.utils import ensure_dir, write_json
 
@@ -59,6 +63,7 @@ class RobustnessData:
     etf: pd.DataFrame
     index: pd.DataFrame
     calendar: pd.Series
+    data_quality: dict[str, int]
 
 
 @dataclass
@@ -86,17 +91,22 @@ def _load_robustness_data(config_path: str | Path) -> RobustnessData:
     )
     panel = load_stock_panel(config)
     panel = panel[panel["date"] >= pd.Timestamp(calendar.iloc[0])].reset_index(drop=True)
+    fundamentals, data_quality = _clean_future_fundamentals_for_run(
+        load_stock_fundamentals(config),
+        pd.Timestamp(calendar.iloc[-1]),
+    )
     return RobustnessData(
         config=config,
         panel=panel,
         membership=load_membership_snapshots(config),
         disclosure_events=load_disclosure_events(config),
-        fundamentals=load_stock_fundamentals(config),
+        fundamentals=fundamentals,
         dividend_actions=load_dividend_actions(config),
         corporate_actions=load_corporate_actions(config),
         etf=etf,
         index=index,
         calendar=calendar,
+        data_quality=data_quality,
     )
 
 
@@ -110,6 +120,8 @@ def _prepare_strategies(data: RobustnessData) -> dict[str, PreparedStrategy]:
     v1_params = _params_for_config(REBOUND_MAX5_V1_PARAMS, data.config)
     v2_params = _params_for_config(REBOUND_MAX5_V2_PARAMS, data.config)
     v3_params = _params_for_config(REBOUND_MAX5_V3_PARAMS, data.config)
+    v4_params = _params_for_config(REBOUND_MAX5_V4_PARAMS, data.config)
+    v5_params = _params_for_config(REBOUND_MAX5_V5_PARAMS, data.config)
 
     v1_features = build_strategy_feature_panel(
         data.panel,
@@ -149,6 +161,46 @@ def _prepare_strategies(data: RobustnessData) -> dict[str, PreparedStrategy]:
         dividend_actions=data.dividend_actions,
         corporate_actions=data.corporate_actions,
     )
+    v4_regime = build_market_regime_filter_v3(
+        etf=data.etf,
+        index=data.index,
+        panel=data.panel,
+        membership=data.membership,
+        calendar=data.calendar,
+        params=v4_params,
+    )
+    v4_features, _ = build_rebound_v4_feature_panel(
+        panel=data.panel,
+        membership=data.membership,
+        calendar=data.calendar,
+        config=data.config,
+        benchmark=data.index,
+        params=v4_params,
+        disclosure_events=data.disclosure_events,
+        fundamentals=data.fundamentals,
+        dividend_actions=data.dividend_actions,
+        corporate_actions=data.corporate_actions,
+    )
+    v5_regime = build_market_regime_filter_v3(
+        etf=data.etf,
+        index=data.index,
+        panel=data.panel,
+        membership=data.membership,
+        calendar=data.calendar,
+        params=v5_params,
+    )
+    v5_features, _ = build_rebound_v4_feature_panel(
+        panel=data.panel,
+        membership=data.membership,
+        calendar=data.calendar,
+        config=data.config,
+        benchmark=data.index,
+        params=v5_params,
+        disclosure_events=data.disclosure_events,
+        fundamentals=data.fundamentals,
+        dividend_actions=data.dividend_actions,
+        corporate_actions=data.corporate_actions,
+    )
 
     return {
         "rebound_max5_v1": PreparedStrategy(
@@ -168,6 +220,18 @@ def _prepare_strategies(data: RobustnessData) -> dict[str, PreparedStrategy]:
             v3_params,
             v3_features,
             v3_regime.set_index("date")["market_regime_ok"],
+        ),
+        "rebound_max5_v4": PreparedStrategy(
+            "rebound_max5_v4",
+            v4_params,
+            v4_features,
+            v4_regime.set_index("date")["market_regime_ok"],
+        ),
+        "rebound_max5_v5": PreparedStrategy(
+            "rebound_max5_v5",
+            v5_params,
+            v5_features,
+            v5_regime.set_index("date")["market_regime_ok"],
         ),
     }
 
@@ -700,33 +764,40 @@ def _write_markdown_report(
     start_sensitivity: pd.DataFrame,
     contribution_sensitivity: pd.DataFrame,
     freshness: pd.DataFrame,
+    target_strategy: str,
 ) -> None:
-    v3_oos = comparison[
-        (comparison["strategy"] == "rebound_max5_v3") & (comparison["period"] == "oos")
+    target_oos = comparison[
+        (comparison["strategy"] == target_strategy) & (comparison["period"] == "oos")
     ].iloc[0]
-    v2_oos = comparison[
-        (comparison["strategy"] == "rebound_max5_v2") & (comparison["period"] == "oos")
+    baseline_strategy = (
+        "rebound_max5_v3" if target_strategy != "rebound_max5_v3" else "rebound_max5_v2"
+    )
+    baseline_oos = comparison[
+        (comparison["strategy"] == baseline_strategy) & (comparison["period"] == "oos")
     ].iloc[0]
-    v3_yearly = yearly[yearly["strategy"] == "rebound_max5_v3"].copy()
+    target_yearly = yearly[yearly["strategy"] == target_strategy].copy()
     cost_oos = cost[cost["period"] == "oos"].copy()
     start_summary = start_sensitivity[["cagr", "max_drawdown", "sharpe"]].describe()
     contribution_oos = contribution_sensitivity[
         contribution_sensitivity["period"] == "oos"
     ].copy()
+    target_label = target_strategy.replace("rebound_max5_", "")
+    baseline_label = baseline_strategy.replace("rebound_max5_", "")
 
     lines = [
         "# Stock Strategy Robustness Pack",
         "",
         "## Headline",
         "",
-        f"- v3 OOS TWR: `{_fmt_pct(v3_oos['twr'])}` vs v2 `{_fmt_pct(v2_oos['twr'])}`.",
-        f"- v3 OOS CAGR: `{_fmt_pct(v3_oos['cagr'])}`.",
-        f"- v3 OOS max DD: `{_fmt_pct(v3_oos['max_drawdown'])}`.",
-        f"- v3 OOS Sharpe: `{v3_oos['sharpe']:.2f}`.",
+        f"- Target: `{target_strategy}`.",
+        f"- {target_label} OOS TWR: `{_fmt_pct(target_oos['twr'])}` vs {baseline_label} `{_fmt_pct(baseline_oos['twr'])}`.",
+        f"- {target_label} OOS CAGR: `{_fmt_pct(target_oos['cagr'])}`.",
+        f"- {target_label} OOS max DD: `{_fmt_pct(target_oos['max_drawdown'])}`.",
+        f"- {target_label} OOS Sharpe: `{target_oos['sharpe']:.2f}`.",
         "",
         "## Stress Notes",
         "",
-        f"- Worst v3 yearly excess TWR vs ETF DCA: `{_fmt_pct(v3_yearly['excess_twr_vs_etf_dca'].min())}`.",
+        f"- Worst {target_label} yearly excess TWR vs ETF DCA: `{_fmt_pct(target_yearly['excess_twr_vs_etf_dca'].min())}`.",
         f"- x3 cost OOS CAGR: `{_fmt_pct(cost_oos.loc[cost_oos['cost_multiplier'].idxmax(), 'cagr'])}`.",
         f"- Start-date sensitivity median CAGR: `{_fmt_pct(start_summary.loc['50%', 'cagr'])}`.",
         f"- Worst contribution-day OOS CAGR: `{_fmt_pct(contribution_oos['cagr'].min())}`.",
@@ -755,6 +826,7 @@ def run_stock_strategy_robustness(
     run_id: str | None = None,
     train_end: str = "2023-12-31",
     start_samples: int = 12,
+    target_strategy: str = "rebound_max5_v4",
 ) -> StockStrategyRobustnessRun:
     data = _load_robustness_data(config_path)
     train_end_date = pd.Timestamp(train_end)
@@ -762,6 +834,10 @@ def run_stock_strategy_robustness(
     run_dir = ensure_dir(Path("runs") / actual_run_id)
 
     prepared = _prepare_strategies(data)
+    if target_strategy not in prepared:
+        raise ValueError(
+            f"Unknown target strategy {target_strategy!r}; expected one of {sorted(prepared)}"
+        )
     comparison, simulations = _strategy_comparison(
         data=data,
         prepared=prepared,
@@ -770,19 +846,19 @@ def run_stock_strategy_robustness(
     yearly = _yearly_walk_forward(data=data, simulations=simulations)
     cost = _cost_stress(
         data=data,
-        strategy=prepared["rebound_max5_v3"],
+        strategy=prepared[target_strategy],
         train_end=train_end_date,
         multipliers=[1.0, 2.0, 3.0],
     )
     start_sensitivity = _start_date_sensitivity(
         data=data,
-        strategy=prepared["rebound_max5_v3"],
+        strategy=prepared[target_strategy],
         train_end=train_end_date,
         sample_count=int(start_samples),
     )
     contribution_sensitivity = _contribution_day_sensitivity(
         data=data,
-        strategy=prepared["rebound_max5_v3"],
+        strategy=prepared[target_strategy],
         train_end=train_end_date,
         offsets=[0, 1, 2, 4, 9, 14],
     )
@@ -800,13 +876,20 @@ def run_stock_strategy_robustness(
     )
     freshness.to_csv(run_dir / "data_freshness.csv", index=False)
 
+    target_oos = comparison[
+        (comparison["strategy"] == target_strategy) & (comparison["period"] == "oos")
+    ].iloc[0]
     v3_oos = comparison[
         (comparison["strategy"] == "rebound_max5_v3") & (comparison["period"] == "oos")
-    ].iloc[0]
+    ]
+    v4_oos = comparison[
+        (comparison["strategy"] == "rebound_max5_v4") & (comparison["period"] == "oos")
+    ]
     summary = {
         "run_id": actual_run_id,
         "created_at": datetime.now(UTC).isoformat(),
         "train_end": str(train_end_date.date()),
+        "target_strategy": target_strategy,
         "checks": {
             "strategy_comparison_rows": int(len(comparison)),
             "yearly_rows": int(len(yearly)),
@@ -814,10 +897,13 @@ def run_stock_strategy_robustness(
             "start_date_rows": int(len(start_sensitivity)),
             "contribution_day_rows": int(len(contribution_sensitivity)),
         },
-        "v3_oos": json.loads(v3_oos.to_json()),
-        "v3_cost_stress_oos": json.loads(
+        "target_oos": json.loads(target_oos.to_json()),
+        "target_cost_stress_oos": json.loads(
             cost[cost["period"] == "oos"].to_json(orient="records")
         ),
+        "v3_oos": json.loads(v3_oos.iloc[0].to_json()) if not v3_oos.empty else None,
+        "v4_oos": json.loads(v4_oos.iloc[0].to_json()) if not v4_oos.empty else None,
+        "data_quality": data.data_quality,
         "data_freshness": json.loads(freshness.to_json(orient="records")),
     }
     write_json(run_dir / "summary.json", summary)
@@ -829,5 +915,6 @@ def run_stock_strategy_robustness(
         start_sensitivity=start_sensitivity,
         contribution_sensitivity=contribution_sensitivity,
         freshness=freshness,
+        target_strategy=target_strategy,
     )
     return StockStrategyRobustnessRun(run_id=actual_run_id, run_dir=run_dir)

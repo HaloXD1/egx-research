@@ -15,6 +15,7 @@ from egx_research.stock_rotation import (
     build_etf_features,
     build_stock_features,
     find_overlap_start_date,
+    infer_stock_sector,
     run_equal_weight_benchmark,
     score_snapshot,
     select_rebalance_portfolio,
@@ -24,6 +25,7 @@ from egx_research.stock_rotation_data import (
     build_stage2_datasets_from_disclosures,
     classify_disclosure_event,
     fetch_current_constituents,
+    filter_future_fundamentals,
     parse_mubasher_financial_statements,
     parse_mubasher_history_csv,
     parse_mubasher_news_page,
@@ -134,11 +136,19 @@ def test_resolve_historical_csv_url_extracts_attribute(monkeypatch) -> None:
 
 
 def test_parse_mubasher_history_csv_normalizes_rows() -> None:
-    csv_text = "2020-01-01/00:00:00,10,11,9,10.5,1000\n2020-01-02/00:00:00,10.5,11.5,10,11,2000"
+    csv_text = "\n".join(
+        [
+            "2020-01-01/00:00:00,10,11,9,10.5,1000",
+            "2020-01-01/00:00:00,10.1,11.1,9.1,10.6,1500",
+            "2020-01-02/00:00:00,10.5,11.5,10,11,2000",
+            "2020-01-03/00:00:00,-10,-9,-11,-10.5,3000",
+        ]
+    )
     frame = parse_mubasher_history_csv(csv_text)
     assert list(frame.columns) == ["date", "open", "high", "low", "close", "volume"]
     assert len(frame) == 2
     assert frame.iloc[0]["date"].strftime("%Y-%m-%d") == "2020-01-01"
+    assert frame.iloc[0]["close"] == 10.6
     assert frame.iloc[1]["close"] == 11.0
 
 
@@ -168,6 +178,10 @@ def test_parse_mubasher_stock_overview_extracts_fundamental_stats() -> None:
     assert stats["eps"] == 1.0
     assert stats["eps_period"] == ("First Quarter", 2024)
     assert stats["shares_outstanding"] == 1000.0
+
+
+def test_beltone_current_ticker_maps_to_financials() -> None:
+    assert infer_stock_sector("BTFH", "Beltone Holding") == "financials"
 
 
 def test_parse_mubasher_financial_statements_builds_quarterly_rows() -> None:
@@ -252,6 +266,46 @@ def test_parse_mubasher_financial_statements_smooths_unit_outliers() -> None:
     assert q2["equity"] == 210000.0
 
 
+def test_filter_future_fundamentals_removes_unavailable_rows() -> None:
+    fundamentals = pd.DataFrame(
+        [
+            {
+                "symbol": "ABC",
+                "period_end": "2024-03-31",
+                "filing_date": "2024-05-30",
+                "fiscal_period": "Q1 2024",
+                "currency": "EGP",
+                "source_url": "https://example.com/q1.pdf",
+            },
+            {
+                "symbol": "ABC",
+                "period_end": "2024-06-30",
+                "filing_date": "2024-08-29",
+                "fiscal_period": "Q2 2024",
+                "currency": "EGP",
+                "source_url": "https://example.com/q2.pdf",
+            },
+            {
+                "symbol": "ABC",
+                "period_end": "2025-03-31",
+                "filing_date": "2025-05-30",
+                "fiscal_period": "Q1 2025",
+                "currency": "EGP",
+                "source_url": "https://example.com/q1-2025.pdf",
+            },
+        ]
+    )
+
+    filtered, stats = filter_future_fundamentals(
+        fundamentals, pd.Timestamp("2024-07-01")
+    )
+
+    assert list(filtered["fiscal_period"]) == ["Q1 2024"]
+    assert stats["future_period_rows_removed"] == 1
+    assert stats["future_filing_rows_removed"] == 2
+    assert stats["future_rows_removed_total"] == 2
+
+
 def test_sync_stock_fundamentals_writes_internet_dataset(monkeypatch, tmp_path) -> None:
     root = tmp_path / "data/stock_rotation"
     root.mkdir(parents=True)
@@ -295,7 +349,7 @@ def test_sync_stock_fundamentals_writes_internet_dataset(monkeypatch, tmp_path) 
 
     monkeypatch.setattr("egx_research.stock_rotation_data._get", fake_get)
 
-    sync_stock_fundamentals(config)
+    sync_stock_fundamentals(config, as_of=pd.Timestamp("2024-12-31"))
 
     fundamentals = pd.read_csv(root / "fundamentals.csv")
     assert len(fundamentals) == 1

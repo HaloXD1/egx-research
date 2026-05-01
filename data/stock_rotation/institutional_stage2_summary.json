@@ -1,11 +1,11 @@
 {
-  "created_at": "2026-04-29T17:13:49.228865+00:00",
+  "created_at": "2026-04-30T14:04:58.086709+00:00",
   "symbols_total": 31,
   "symbols_with_events": 31,
   "disclosure_events_loaded": 775,
   "dividend_actions_loaded": 52,
   "corporate_actions_loaded": 30,
-  "max_news_items_per_symbol": 100,
+  "max_news_items_per_symbol": 80,
   "symbol_status": [
     {
       "symbol": "COMI",
@@ -74,24 +74,6 @@
       "status": "ok"
     },
     {
-      "symbol": "VLMRA",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/news",
-      "events_loaded": 25,
-      "status": "ok"
-    },
-    {
-      "symbol": "BFTH",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/news",
-      "events_loaded": 25,
-      "status": "ok"
-    },
-    {
-      "symbol": "GBCO",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/news",
-      "events_loaded": 25,
-      "status": "ok"
-    },
-    {
       "symbol": "ORAS",
       "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS/news",
       "events_loaded": 25,
@@ -100,6 +82,18 @@
     {
       "symbol": "CCAP",
       "news_url": "https://english.mubasher.info/markets/EGX/stocks/CCAP/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "BTFH",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "GBCO",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/news",
       "events_loaded": 25,
       "status": "ok"
     },
@@ -116,6 +110,18 @@
       "status": "ok"
     },
     {
+      "symbol": "ORHD",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "MCQE",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
       "symbol": "ISPH",
       "news_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH/news",
       "events_loaded": 25,
@@ -128,32 +134,20 @@
       "status": "ok"
     },
     {
-      "symbol": "MCQE",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/news",
-      "events_loaded": 25,
-      "status": "ok"
-    },
-    {
-      "symbol": "ORHD",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/news",
-      "events_loaded": 25,
-      "status": "ok"
-    },
-    {
       "symbol": "AMOC",
       "news_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC/news",
       "events_loaded": 25,
       "status": "ok"
     },
     {
-      "symbol": "ORWE",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/news",
+      "symbol": "HELI",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/news",
       "events_loaded": 25,
       "status": "ok"
     },
     {
-      "symbol": "EMFD",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/news",
+      "symbol": "VLMRA",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/news",
       "events_loaded": 25,
       "status": "ok"
     },
@@ -164,8 +158,14 @@
       "status": "ok"
     },
     {
-      "symbol": "HELI",
-      "news_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/news",
+      "symbol": "EMFD",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/news",
+      "events_loaded": 25,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORWE",
+      "news_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/news",
       "events_loaded": 25,
       "status": "ok"
     },

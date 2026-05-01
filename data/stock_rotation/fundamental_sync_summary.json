@@ -1,11 +1,15 @@
 {
-  "created_at": "2026-04-29T17:14:46.634192+00:00",
+  "created_at": "2026-04-30T14:07:12.430271+00:00",
   "symbols_total": 31,
   "symbols_with_rows": 31,
-  "fundamental_rows_loaded": 733,
+  "fundamental_rows_loaded": 728,
   "quarterly_lag_days": 60,
   "annual_lag_days": 90,
   "actual_disclosure_date_overrides": 217,
+  "fundamental_as_of_date": "2026-04-30",
+  "future_period_rows_removed": 4,
+  "future_filing_rows_removed": 5,
+  "future_rows_removed_total": 5,
   "source": "mubasher_financial_statements",
   "symbol_status": [
     {
@@ -97,30 +101,6 @@
       "status": "ok"
     },
     {
-      "symbol": "VLMRA",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/financial-statements",
-      "rows_loaded": 24,
-      "shares_outstanding": 352389240.0,
-      "status": "ok"
-    },
-    {
-      "symbol": "BFTH",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/financial-statements",
-      "rows_loaded": 25,
-      "shares_outstanding": 10718106944.0,
-      "status": "ok"
-    },
-    {
-      "symbol": "GBCO",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/financial-statements",
-      "rows_loaded": 24,
-      "shares_outstanding": 1085500000.0,
-      "status": "ok"
-    },
-    {
       "symbol": "ORAS",
       "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS",
       "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORAS/financial-statements",
@@ -134,6 +114,22 @@
       "statements_url": "https://english.mubasher.info/markets/EGX/stocks/CCAP/financial-statements",
       "rows_loaded": 21,
       "shares_outstanding": 3216472781.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "BTFH",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/BTFH/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 10718106944.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "GBCO",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/GBCO/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 1085500000.0,
       "status": "ok"
     },
     {
@@ -153,6 +149,22 @@
       "status": "ok"
     },
     {
+      "symbol": "ORHD",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 1130473523.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "MCQE",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/financial-statements",
+      "rows_loaded": 23,
+      "shares_outstanding": 96000000.0,
+      "status": "ok"
+    },
+    {
       "symbol": "ISPH",
       "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH",
       "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ISPH/financial-statements",
@@ -169,22 +181,6 @@
       "status": "ok"
     },
     {
-      "symbol": "MCQE",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/MCQE/financial-statements",
-      "rows_loaded": 23,
-      "shares_outstanding": 96000000.0,
-      "status": "ok"
-    },
-    {
-      "symbol": "ORHD",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORHD/financial-statements",
-      "rows_loaded": 24,
-      "shares_outstanding": 1130473523.0,
-      "status": "ok"
-    },
-    {
       "symbol": "AMOC",
       "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC",
       "statements_url": "https://english.mubasher.info/markets/EGX/stocks/AMOC/financial-statements",
@@ -193,19 +189,19 @@
       "status": "ok"
     },
     {
-      "symbol": "ORWE",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/financial-statements",
+      "symbol": "HELI",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/HELI",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/financial-statements",
       "rows_loaded": 25,
-      "shares_outstanding": 665107268.0,
+      "shares_outstanding": 1335085200.0,
       "status": "ok"
     },
     {
-      "symbol": "EMFD",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/financial-statements",
-      "rows_loaded": 25,
-      "shares_outstanding": 5446929384.0,
+      "symbol": "VLMRA",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/VLMRA/financial-statements",
+      "rows_loaded": 24,
+      "shares_outstanding": 352389240.0,
       "status": "ok"
     },
     {
@@ -217,11 +213,19 @@
       "status": "ok"
     },
     {
-      "symbol": "HELI",
-      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/HELI",
-      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/HELI/financial-statements",
+      "symbol": "EMFD",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/EMFD/financial-statements",
       "rows_loaded": 25,
-      "shares_outstanding": 1335085200.0,
+      "shares_outstanding": 5446929384.0,
+      "status": "ok"
+    },
+    {
+      "symbol": "ORWE",
+      "stock_page_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE",
+      "statements_url": "https://english.mubasher.info/markets/EGX/stocks/ORWE/financial-statements",
+      "rows_loaded": 25,
+      "shares_outstanding": 665107268.0,
       "status": "ok"
     },
     {

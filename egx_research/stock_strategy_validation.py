@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -134,6 +135,16 @@ REBOUND_MAX5_V4_PARAMS: dict[str, Any] = {
     "partial_target_atr": 0.0,
     "partial_exit_fraction": 0.0,
     "move_stop_to_entry_after_partial": False,
+}
+
+
+REBOUND_MAX5_V5_PARAMS: dict[str, Any] = {
+    **REBOUND_MAX5_V4_PARAMS,
+    "v5_profile": "v4_aggressive_baseline",
+    "top_n": 12,
+    "max_positions": 5,
+    "market_filter_breadth_min": 0.40,
+    "market_filter_breadth_soft_min": 0.32,
 }
 
 
@@ -1357,6 +1368,461 @@ def run_rebound_max5_v4(
         "test_excess_cagr_vs_etf_dca": float(
             test_metrics["cagr"] - etf_test_metrics["cagr"]
         ),
+    }
+    write_json(run_dir / "summary.json", summary)
+    return StockStrategyValidationRun(run_id=actual_run_id, run_dir=run_dir)
+
+
+def _v5_candidate_params() -> list[dict[str, Any]]:
+    base = {
+        **REBOUND_MAX5_V4_PARAMS,
+        "v5_profile": "balanced_edge",
+        "top_n": 10,
+        "max_positions": 5,
+        "max_position_weight": 0.22,
+        "min_net_edge_pct": 0.030,
+        "min_edge_cost_ratio": 3.5,
+        "v4_base_rank_weight": 0.85,
+        "v4_net_edge_rank_weight": 0.10,
+        "v4_liquidity_rank_weight": 0.03,
+        "v4_low_risk_weight": 0.02,
+        "dynamic_size_min": 0.90,
+        "dynamic_size_max": 1.10,
+        "min_position_size_mult": 0.90,
+        "max_position_size_mult": 1.10,
+        "max_sector_positions": 2,
+        "exit_on_market_filter_fail": True,
+        "market_filter_fail_min_hold_bars": 3,
+        "market_fail_trail_atr": 2.0,
+        "portfolio_drawdown_pause_pct": 0.22,
+    }
+    profiles = [
+        {
+            "v5_profile": "v4_aggressive_baseline",
+            **REBOUND_MAX5_V4_PARAMS,
+        },
+        base,
+        {
+            **base,
+            "v5_profile": "cost_survivor",
+            "top_n": 9,
+            "max_position_weight": 0.20,
+            "min_net_edge_pct": 0.040,
+            "min_edge_cost_ratio": 4.5,
+            "dynamic_size_min": 0.80,
+            "dynamic_size_max": 1.00,
+            "min_position_size_mult": 0.80,
+            "max_position_size_mult": 1.00,
+            "market_fail_trail_atr": 1.7,
+        },
+        {
+            **base,
+            "v5_profile": "quality_liquidity_blend",
+            "v4_base_rank_weight": 0.72,
+            "v4_net_edge_rank_weight": 0.15,
+            "v4_liquidity_rank_weight": 0.08,
+            "v4_low_risk_weight": 0.05,
+            "min_net_edge_pct": 0.030,
+            "min_edge_cost_ratio": 3.8,
+        },
+        {
+            **base,
+            "v5_profile": "concentrated_high_edge",
+            "top_n": 8,
+            "max_positions": 4,
+            "max_position_weight": 0.25,
+            "min_net_edge_pct": 0.045,
+            "min_edge_cost_ratio": 5.0,
+            "dynamic_size_min": 1.00,
+            "dynamic_size_max": 1.15,
+            "min_position_size_mult": 1.00,
+            "max_position_size_mult": 1.15,
+        },
+        {
+            **base,
+            "v5_profile": "broad_low_turnover",
+            "top_n": 12,
+            "max_positions": 5,
+            "max_position_weight": 0.20,
+            "min_net_edge_pct": 0.025,
+            "min_edge_cost_ratio": 4.0,
+            "max_hold_bars": 28,
+            "trail_atr": 2.2,
+        },
+        {
+            **base,
+            "v5_profile": "fast_exit_defensive",
+            "max_hold_bars": 17,
+            "trail_atr": 2.0,
+            "stop_atr": 1.60,
+            "market_fail_trail_atr": 1.4,
+            "portfolio_drawdown_pause_pct": 0.18,
+        },
+        {
+            **base,
+            "v5_profile": "return_hunter_guarded",
+            "top_n": 12,
+            "max_position_weight": 0.25,
+            "min_net_edge_pct": 0.0275,
+            "min_edge_cost_ratio": 3.25,
+            "dynamic_size_min": 1.00,
+            "dynamic_size_max": 1.20,
+            "min_position_size_mult": 1.00,
+            "max_position_size_mult": 1.20,
+        },
+    ]
+    expanded: list[dict[str, Any]] = []
+    for profile in profiles:
+        for breadth_min in [0.40, 0.45]:
+            candidate = dict(profile)
+            candidate["market_filter_breadth_min"] = breadth_min
+            candidate["market_filter_breadth_soft_min"] = min(0.35, breadth_min - 0.08)
+            expanded.append(candidate)
+    return expanded
+
+
+def _clone_cost_config(config: Any, multiplier: float) -> Any:
+    variant = copy.deepcopy(config)
+    variant.backtest.fee_bps *= float(multiplier)
+    variant.backtest.slippage_bps *= float(multiplier)
+    variant.portfolio.fixed_buy_fee_egp *= float(multiplier)
+    return variant
+
+
+def _simulate_rebound_variant(
+    *,
+    panel: pd.DataFrame,
+    membership: pd.DataFrame,
+    calendar: pd.Series,
+    config: Any,
+    index: pd.DataFrame,
+    params: dict[str, Any],
+    disclosure_events: pd.DataFrame,
+    fundamentals: pd.DataFrame,
+    dividend_actions: pd.DataFrame,
+    corporate_actions: pd.DataFrame,
+) -> tuple[StrategySimulation, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    selected_params = dict(params)
+    selected_params["fixed_sell_fee_egp"] = float(config.portfolio.fixed_buy_fee_egp)
+    regime_frame = build_market_regime_filter_v3(
+        etf=load_price_data(config.benchmark.etf_symbol_path),
+        index=index,
+        panel=panel,
+        membership=membership,
+        calendar=calendar,
+        params=selected_params,
+    )
+    features, factor_scores = build_rebound_v4_feature_panel(
+        panel=panel,
+        membership=membership,
+        calendar=calendar,
+        config=config,
+        benchmark=index,
+        params=selected_params,
+        disclosure_events=disclosure_events,
+        fundamentals=fundamentals,
+        dividend_actions=dividend_actions,
+        corporate_actions=corporate_actions,
+    )
+    simulation = simulate_event_driven_strategy(
+        panel=panel,
+        features=features,
+        calendar=calendar,
+        membership=membership,
+        config=config,
+        family="rebound",
+        params=selected_params,
+        market_filter=regime_frame.set_index("date")["market_regime_ok"],
+    )
+    return simulation, regime_frame, features, factor_scores
+
+
+def _v5_robust_score(
+    *,
+    full_metrics: dict[str, float],
+    oos_metrics: dict[str, float],
+    oos_benchmark: dict[str, float],
+    cost_rows: list[dict[str, float]],
+    yearly_rows: pd.DataFrame,
+) -> float:
+    oos_excess_cagr = float(oos_metrics["cagr"] - oos_benchmark["cagr"])
+    oos_excess_twr = float(
+        oos_metrics["twr_total_return"] - oos_benchmark["twr_total_return"]
+    )
+    x2 = next(row for row in cost_rows if row["cost_multiplier"] == 2.0)
+    x3 = next(row for row in cost_rows if row["cost_multiplier"] == 3.0)
+    worst_yearly = float(yearly_rows["excess_twr_vs_etf_dca"].min())
+    score = (
+        2.00 * oos_excess_cagr
+        + 0.55 * oos_excess_twr
+        + 0.32 * float(oos_metrics["sharpe"])
+        + 0.25 * float(oos_metrics["return_dd"])
+        + 1.20 * float(x2["excess_cagr_vs_etf_dca"])
+        + 0.80 * float(x3["excess_cagr_vs_etf_dca"])
+        + 0.25 * worst_yearly
+        + 0.20 * float(full_metrics["cagr"])
+    )
+    if float(oos_metrics["max_drawdown"]) > 0.26:
+        score -= 2.5 * (float(oos_metrics["max_drawdown"]) - 0.26)
+    if float(x2["excess_cagr_vs_etf_dca"]) < 0.0:
+        score -= 0.35
+    if float(x3["excess_cagr_vs_etf_dca"]) < -0.08:
+        score -= 0.25
+    if float(full_metrics.get("fee_to_contributions_ratio", 0.0)) > 0.50:
+        score -= 0.40 * (float(full_metrics["fee_to_contributions_ratio"]) - 0.50)
+    return float(score)
+
+
+def run_rebound_max5_v5(
+    *,
+    config_path: str | Path = Path("config/stock_rotation_multifactor.yaml"),
+    run_id: str | None = None,
+    train_end: str = "2023-12-31",
+    max_candidates: int = 16,
+) -> StockStrategyValidationRun:
+    config = load_stock_rotation_config(config_path)
+    config.selection.method = "sector_multifactor"
+    config.selection.use_total_return_features = True
+    config.selection.require_long_term_trend = True
+    config.selection.max_drawdown_252 = min(float(config.selection.max_drawdown_252), 0.60)
+
+    panel = load_stock_panel(config)
+    membership = load_membership_snapshots(config)
+    disclosure_events = load_disclosure_events(config)
+    fundamentals = load_stock_fundamentals(config)
+    dividend_actions = load_dividend_actions(config)
+    corporate_actions = load_corporate_actions(config)
+    etf = load_price_data(config.benchmark.etf_symbol_path)
+    index = load_price_data(config.benchmark.index_symbol_path)
+    calendar = (
+        pd.Series(pd.to_datetime(etf["date"]))
+        .sort_values()
+        .drop_duplicates()
+        .reset_index(drop=True)
+    )
+    panel = panel[panel["date"] >= pd.Timestamp(calendar.iloc[0])].reset_index(drop=True)
+    fundamentals, data_quality = _clean_future_fundamentals_for_run(
+        fundamentals,
+        pd.Timestamp(calendar.iloc[-1]),
+    )
+
+    train_end_date = pd.Timestamp(train_end)
+    test_start_date = pd.Timestamp(calendar[calendar > train_end_date].iloc[0])
+    test_start_idx = _date_index(calendar, test_start_date, side="left")
+    etf_full = run_dca_benchmark(etf, 0, len(calendar) - 1, config.backtest)
+    etf_test_metrics = _period_benchmark_metrics(
+        etf=etf,
+        start_idx=test_start_idx,
+        end_idx=len(calendar) - 1,
+        config=config,
+    )
+    actual_run_id = run_id or f"rebound-max5-v5-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
+    run_dir = ensure_dir(Path("runs") / actual_run_id)
+
+    candidate_rows: list[dict[str, Any]] = []
+    best: dict[str, Any] | None = None
+    for number, params in enumerate(_v5_candidate_params()[: int(max_candidates)]):
+        simulation, regime_frame, features, factor_scores = _simulate_rebound_variant(
+            panel=panel,
+            membership=membership,
+            calendar=calendar,
+            config=config,
+            index=index,
+            params=params,
+            disclosure_events=disclosure_events,
+            fundamentals=fundamentals,
+            dividend_actions=dividend_actions,
+            corporate_actions=corporate_actions,
+        )
+        test_metrics = _slice_metrics(
+            simulation, calendar, test_start_date, pd.Timestamp(calendar.iloc[-1])
+        )
+        yearly = pd.DataFrame(
+            _yearly_rows(
+                simulation=simulation,
+                etf=etf,
+                calendar=calendar,
+                config=config,
+            )
+        )
+        cost_rows: list[dict[str, float]] = []
+        for multiplier in [1.0, 2.0, 3.0]:
+            cost_config = _clone_cost_config(config, multiplier)
+            cost_simulation, _, _, _ = _simulate_rebound_variant(
+                panel=panel,
+                membership=membership,
+                calendar=calendar,
+                config=cost_config,
+                index=index,
+                params=params,
+                disclosure_events=disclosure_events,
+                fundamentals=fundamentals,
+                dividend_actions=dividend_actions,
+                corporate_actions=corporate_actions,
+            )
+            cost_test = _slice_metrics(
+                cost_simulation,
+                calendar,
+                test_start_date,
+                pd.Timestamp(calendar.iloc[-1]),
+            )
+            cost_benchmark = _period_benchmark_metrics(
+                etf=etf,
+                start_idx=test_start_idx,
+                end_idx=len(calendar) - 1,
+                config=cost_config,
+            )
+            cost_rows.append(
+                {
+                    "cost_multiplier": float(multiplier),
+                    "cagr": float(cost_test["cagr"]),
+                    "twr": float(cost_test["twr_total_return"]),
+                    "max_drawdown": float(cost_test["max_drawdown"]),
+                    "sharpe": float(cost_test["sharpe"]),
+                    "excess_cagr_vs_etf_dca": float(
+                        cost_test["cagr"] - cost_benchmark["cagr"]
+                    ),
+                    "excess_twr_vs_etf_dca": float(
+                        cost_test["twr_total_return"]
+                        - cost_benchmark["twr_total_return"]
+                    ),
+                }
+            )
+        score = _v5_robust_score(
+            full_metrics=simulation.metrics,
+            oos_metrics=test_metrics,
+            oos_benchmark=etf_test_metrics,
+            cost_rows=cost_rows,
+            yearly_rows=yearly,
+        )
+        row = {
+            "candidate": int(number),
+            "profile": str(params.get("v5_profile", f"candidate_{number}")),
+            "robust_score": float(score),
+            "oos_twr": float(test_metrics["twr_total_return"]),
+            "oos_cagr": float(test_metrics["cagr"]),
+            "oos_max_drawdown": float(test_metrics["max_drawdown"]),
+            "oos_sharpe": float(test_metrics["sharpe"]),
+            "oos_excess_twr_vs_etf_dca": float(
+                test_metrics["twr_total_return"] - etf_test_metrics["twr_total_return"]
+            ),
+            "oos_excess_cagr_vs_etf_dca": float(
+                test_metrics["cagr"] - etf_test_metrics["cagr"]
+            ),
+            "full_cagr": float(simulation.metrics["cagr"]),
+            "full_max_drawdown": float(simulation.metrics["max_drawdown"]),
+            "fee_to_contributions_ratio": float(
+                simulation.metrics.get("fee_to_contributions_ratio", 0.0)
+            ),
+            "worst_yearly_excess_twr": float(yearly["excess_twr_vs_etf_dca"].min()),
+            "x2_excess_cagr_vs_etf_dca": next(
+                row["excess_cagr_vs_etf_dca"]
+                for row in cost_rows
+                if row["cost_multiplier"] == 2.0
+            ),
+            "x3_excess_cagr_vs_etf_dca": next(
+                row["excess_cagr_vs_etf_dca"]
+                for row in cost_rows
+                if row["cost_multiplier"] == 3.0
+            ),
+            "params": json.dumps(params, sort_keys=True),
+        }
+        candidate_rows.append(row)
+        if best is None or score > float(best["score"]):
+            best = {
+                "score": float(score),
+                "params": params,
+                "simulation": simulation,
+                "regime_frame": regime_frame,
+                "features": features,
+                "factor_scores": factor_scores,
+                "test_metrics": test_metrics,
+                "yearly": yearly,
+                "cost_rows": cost_rows,
+                "candidate": int(number),
+            }
+
+    if best is None:
+        raise ValueError("No v5 candidates were evaluated.")
+
+    champion_params = dict(best["params"])
+    champion_params["fixed_sell_fee_egp"] = float(config.portfolio.fixed_buy_fee_egp)
+    simulation = best["simulation"]
+    regime_frame = best["regime_frame"]
+    factor_scores = best["factor_scores"]
+    features = best["features"]
+    train_metrics = _slice_metrics(
+        simulation, calendar, pd.Timestamp(calendar.iloc[0]), train_end_date
+    )
+
+    pd.DataFrame(candidate_rows).sort_values(
+        "robust_score", ascending=False
+    ).to_csv(run_dir / "candidate_scores.csv", index=False)
+    simulation.actions.to_csv(run_dir / "actions.csv", index=False)
+    simulation.positions.to_csv(run_dir / "positions.csv", index=False)
+    simulation.turnover.to_csv(run_dir / "turnover.csv", index=False)
+    regime_frame.to_csv(run_dir / "market_regime.csv", index=False)
+    factor_scores.to_csv(run_dir / "factor_scores.csv", index=False)
+    simulation.latest_setups.to_csv(run_dir / "latest_setups.csv", index=False)
+    pd.DataFrame(best["cost_rows"]).to_csv(run_dir / "cost_stress_oos.csv", index=False)
+    best["yearly"].to_csv(run_dir / "yearly_performance.csv", index=False)
+    features[
+        [
+            "date",
+            "symbol",
+            "entry_signal",
+            "rank_score",
+            "v3_rank_score",
+            "expected_edge_pct",
+            "expected_net_edge_pct",
+            "edge_cost_ratio",
+            "estimated_liquidity_impact_pct",
+            "position_size_mult",
+        ]
+    ].to_csv(run_dir / "v5_feature_audit.csv", index=False)
+    pd.DataFrame(
+        {
+            "date": calendar.values,
+            "strategy_equity": simulation.equity.values,
+            "etf_dca_equity": etf_full.equity.values,
+        }
+    ).merge(regime_frame, on="date", how="left").to_csv(
+        run_dir / "equity_curve.csv", index=False
+    )
+
+    summary = {
+        "run_id": actual_run_id,
+        "created_at": datetime.now(UTC).isoformat(),
+        "strategy": "rebound_max5_v5",
+        "champion_candidate": int(best["candidate"]),
+        "robust_score": float(best["score"]),
+        "params": champion_params,
+        "data_quality": data_quality,
+        "data_coverage": {
+            "etf_start": str(pd.Timestamp(etf["date"].min()).date()),
+            "etf_end": str(pd.Timestamp(etf["date"].max()).date()),
+            "index_start": str(pd.Timestamp(index["date"].min()).date()),
+            "index_end": str(pd.Timestamp(index["date"].max()).date()),
+            "panel_start": str(pd.Timestamp(panel["date"].min()).date()),
+            "panel_end": str(pd.Timestamp(panel["date"].max()).date()),
+        },
+        "train_start": str(pd.Timestamp(calendar.iloc[0]).date()),
+        "train_end": str(train_end_date.date()),
+        "test_start": str(test_start_date.date()),
+        "test_end": str(pd.Timestamp(calendar.iloc[-1]).date()),
+        "metrics": simulation.metrics,
+        "train_metrics": train_metrics,
+        "test_metrics": best["test_metrics"],
+        "etf_dca_metrics": etf_full.metrics,
+        "etf_test_metrics": etf_test_metrics,
+        "test_excess_twr_vs_etf_dca": float(
+            best["test_metrics"]["twr_total_return"]
+            - etf_test_metrics["twr_total_return"]
+        ),
+        "test_excess_cagr_vs_etf_dca": float(
+            best["test_metrics"]["cagr"] - etf_test_metrics["cagr"]
+        ),
+        "cost_stress_oos": best["cost_rows"],
     }
     write_json(run_dir / "summary.json", summary)
     return StockStrategyValidationRun(run_id=actual_run_id, run_dir=run_dir)
