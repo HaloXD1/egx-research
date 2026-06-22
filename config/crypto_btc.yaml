@@ -1,0 +1,81 @@
+data:
+  symbol: BTCUSDT
+  asset: btc
+  quote: USDT
+  interval: 1d
+  raw_dir: data/crypto/raw
+  normalized_dir: data/crypto/normalized
+  features_dir: data/crypto/features
+  normalized_filename: BTCUSDT_1d.csv
+  features_filename: BTCUSDT_daily_features.csv
+
+sources:
+  price_start: "2017-01-01"
+  onchain_start: "2017-01-01"
+  macro_start: "2017-01-01"
+  funding_start: "2019-09-10"
+  coinmetrics_metrics:
+    - PriceUSD
+    - CapMVRVCur
+    - AdrActCnt
+    - TxCnt
+    - HashRate
+    - SplyCur
+    - FlowInExUSD
+    - FlowOutExUSD
+  macro_series:
+    NASDAQCOM: nasdaq
+    DGS10: us10y
+    DTWEXBGS: dollar
+    WALCL: fed_liquidity
+    VIXCLS: vix
+
+backtest:
+  initial_cash: 100000.0
+  monthly_contribution: 10000.0
+  fee_bps: 10.0
+  slippage_bps: 5.0
+  share_precision: 8
+
+search:
+  families:
+    - crypto_price_trend
+    - crypto_trend_adx
+    - crypto_donchian_breakout
+    - crypto_supertrend_combo
+    - crypto_pullback_combo
+    - crypto_dca_overlay
+    - crypto_onchain_overlay
+    - crypto_sentiment_overlay
+    - crypto_macro_overlay
+    - crypto_ensemble_overlay
+    - crypto_hierarchy_combo
+    - crypto_multisignal_score
+  trials_per_family: 150
+  top_candidates_per_family: 8
+  random_seed: 42
+  robustness_neighbor_steps: 1
+  objective_mode: walk_forward_score
+
+validation:
+  holdout_ratio: 0.2
+  primary_train_bars: 1095
+  primary_test_bars: 365
+  primary_step_bars: 180
+  fallback_train_bars: 365
+  fallback_test_bars: 180
+  fallback_step_bars: 90
+
+ranking:
+  weights:
+    return_dd: 0.4
+    cagr: 0.2
+    profit_factor: 0.1
+    sharpe: 0.2
+    excess_return_vs_dca: 0.1
+  filters:
+    min_closed_trades: 0
+    max_drawdown: 0.8
+    min_profit_factor: 0.0
+    min_holdout_excess_return: -0.2
+    min_neighbor_pass_rate: 0.5
