@@ -3,7 +3,7 @@
 ## Project
 
 - Name: `egx-research`
-- Purpose: local EGX30 ETF research, backtesting, optimization, and reporting
+- Purpose: local EGX30 ETF and BTC research, backtesting, optimization, and reporting
 - Entry CLI: `egx`
 
 ## Key Paths
@@ -11,8 +11,13 @@
 - Code: `egx_research/`
 - Config: `config/default.yaml`
 - Stock config: `config/stock_rotation.yaml`
+- BTC config: `config/crypto_btc.yaml`
 - Raw data: `data/raw/`
 - Normalized data: `data/normalized/`
+- BTC data: `data/crypto/`
+  - raw: `data/crypto/raw/`
+  - normalized: `data/crypto/normalized/BTCUSDT_1d.csv`
+  - features: `data/crypto/features/BTCUSDT_daily_features.csv`
 - Run artifacts: `runs/`
 - Tests: `tests/`
 - TradingView Pine: `tradingview/`
@@ -38,11 +43,16 @@
 - Stock strategy v4: `egx stock-strategy-v4 --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
 - Stock strategy robustness: `egx stock-strategy-robustness --config config/stock_rotation_multifactor.yaml --run-id <run_id>`
 - Paper track: `egx paper-track --model-run-id <run_id> --start-date YYYY-MM-DD`
+- BTC sync: `egx crypto-sync --config config/crypto_btc.yaml`
+- BTC research: `egx crypto-research --config config/crypto_btc.yaml --run-id <run_id>`
+- BTC report: `egx crypto-report --run-id <run_id>`
+- BTC paper track: `egx crypto-paper-track --config config/crypto_btc.yaml --model-run-id <run_id> --start-date YYYY-MM-DD --run-id <paper_id>`
 
 ## Repo Rules
 
 - Keep strategies `daily`, `long-only`, and `local-first` unless explicitly asked otherwise.
 - Compare strategies against monthly DCA using the existing benchmark logic.
+- For BTC, also compare against weekly DCA and buy-and-hold where available.
 - Preserve the current directory contract:
   - source code in `egx_research/`
   - user data in `data/`
@@ -71,6 +81,15 @@
   - event rebound max5 v2: `rebound_max5_v2`
   - event rebound max5 v3: `rebound_max5_v3`
   - paper track helper: `egx paper-track`
+  - BTC crypto families: `crypto_price_trend`, `crypto_trend_adx`, `crypto_donchian_breakout`, `crypto_supertrend_combo`, `crypto_pullback_combo`, `crypto_dca_overlay`, `crypto_onchain_overlay`, `crypto_sentiment_overlay`, `crypto_macro_overlay`, `crypto_ensemble_overlay`, `crypto_hierarchy_combo`, `crypto_multisignal_score`
+- BTC latest research:
+  - combo lab run: `runs/crypto-btc-combo-lab-20260601/`
+  - current signal run: `runs/crypto-paper-btc-combo-lab/`
+  - selected candidate: `crypto_donchian_breakout`
+  - selected params: entry lookback `109`, exit lookback `88`, regime SMA `110`, ATR `10`, stop `3.9`, trail `4.6`
+  - 2022-to-now raw ROI leader: `crypto_supertrend_combo`
+  - 2022-to-now cleanest risk profile: `crypto_trend_adx`
+  - latest signal on 2026-06-01: defensive, target `0% BTC`
 - Current best overlay default:
   - `80%` core
   - tactical sleeve `100 / 60 / 20`
@@ -89,6 +108,9 @@
   - `tradingview/dca_tactical_overlay.pine`
   - `tradingview/dca_tactical_overlay_indicator.pine`
   - `tradingview/dca_pullback_only_indicator.pine`
+  - `tradingview/btc_donchian_breakout_strategy.pine`
+  - `tradingview/btc_supertrend_combo_strategy.pine`
+  - `tradingview/btc_trend_adx_strategy.pine`
 - Stock rotation implementation:
   - `egx_research/stock_rotation_data.py`
   - `egx_research/stock_rotation.py`
@@ -122,6 +144,11 @@
 - `optimization.py` scores candidates on walk-forward, then filters on final holdout vs DCA.
 - `reporting.py` expects completed run folders under `runs/<run_id>/`.
 - `strategies.py` is the main place to add new indicator logic or hierarchy combinations.
+- `crypto_strategies.py` is the main place to add BTC strategy families.
+- `crypto_research.py` selects BTC candidates by positive DCA excess, holdout score, drawdown, neighbor robustness, then walk-forward score.
+- Pine scripts are approximations of the local Python backtester; use BTCUSDT daily charts and compare signal dates before relying on alerts.
+- BTC Pine strategies include an `Execution Mode`: `Clean Alert` gives one buy/one sell per cycle; `Backtest Match` rebalances toward target exposure and can show extra orders.
+- `btc_supertrend_combo_strategy.pine` is now a TradingView-native Supertrend swing script with explicit 95% equity sizing, pullback-memory entries, minimum hold, cooldown, and ATR exits.
 - Stock history currently syncs from:
   - official ETF workbook for current constituents
   - Mubasher stock pages + embedded historical CSV URLs for current-EGX names
