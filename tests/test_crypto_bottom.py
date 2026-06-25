@@ -8,9 +8,16 @@ import pytest
 
 from egx_research.crypto_bottom import (
     _add_market_indicators,
+    _add_regime_labels,
+    _bottom_type_label,
+    _classify_current_bottom_type,
+    _confidence_bucket_summary,
     _component_scores,
+    _driver_attribution,
     _merge_optional_sources,
+    _recommendation_engine,
     _scale_between,
+    _walk_forward_validation,
     run_crypto_bottom_score,
 )
 from egx_research.crypto_config import CryptoConfig
@@ -588,3 +595,83 @@ def test_sth_sopr_real_values_feed_scores() -> None:
 
     assert strong["sth_mvrv_source"].iloc[-1] == "real"
     assert strong_scores["capitulation"].iloc[-1] > weak_scores["capitulation"].iloc[-1]
+
+
+def test_regime_labels_are_deterministic() -> None:
+    rows = 260
+    dates = pd.date_range("2023-01-01", periods=rows, freq="D")
+    close = np.r_[np.linspace(100.0, 160.0, rows - 1), 95.0]
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "macro_vix": np.r_[np.full(rows - 1, 18.0), 35.0],
+            "macro_nasdaq": np.r_[np.linspace(100.0, 130.0, rows - 1), 110.0],
+        }
+    )
+    labeled = _add_regime_labels(_add_market_indicators(frame))
+    assert labeled.iloc[-1]["primary_regime"] == "macro stress"
+    assert "macro_stress" in labeled.iloc[-1]["regime_tags"]
+
+
+def test_walkforward_validation_and_buckets() -> None:
+    rows = 720
+    dates = pd.date_range("2022-01-01", periods=rows, freq="D")
+    close = 100.0 + np.sin(np.arange(rows) / 15.0) * 10.0 + np.arange(rows) * 0.04
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.02,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "CapMVRVCur": np.full(rows, 1.5),
+        }
+    )
+    frame = _add_regime_labels(_add_market_indicators(frame))
+    components = _component_scores(frame)
+    validation, summary = _walk_forward_validation(frame, components, horizon=30, tolerance=0.10, step_days=80)
+    buckets = _confidence_bucket_summary(validation)
+    assert summary["rows"] > 0
+    assert len(buckets) == 5
+    assert {"low", "medium", "high", "very_high", "extreme"} == {row["bucket"] for row in buckets}
+
+
+def test_bottom_type_recommendation_and_drivers() -> None:
+    rows = 160
+    dates = pd.date_range("2024-01-01", periods=rows, freq="D")
+    close = np.r_[np.linspace(100.0, 55.0, rows // 2), np.linspace(55.0, 95.0, rows // 2)]
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close,
+            "high": close * 1.02,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "CapMVRVCur": np.full(rows, 1.2),
+        }
+    )
+    frame = _add_regime_labels(_add_market_indicators(frame))
+    components = _component_scores(frame)
+    latest = frame.iloc[-1]
+    bottom_type = _classify_current_bottom_type(latest, confidence=0.82, regime="bear market")
+    recommendation = _recommendation_engine(
+        0.82,
+        bottom_type["primary"],
+        "bear market",
+        latest,
+        {"invalidation_low": 50.0, "sma20": 90.0, "prior_20d_high": 96.0},
+    )
+    drivers = _driver_attribution(components, len(frame) - 1, {key: 1 / 7 for key in components.columns if key != "date"}, {"warnings": ["missing source"]})
+    assert bottom_type["primary"] in bottom_type["probabilities"]
+    assert recommendation["action"] in {"wait", "probe", "tranche", "aggressive accumulation", "defensive"}
+    assert drivers["positive_drivers"]
+    assert drivers["negative_drivers"]
+    assert drivers["source_penalties"]
+    assert _bottom_type_label(frame, 50) in {"local bounce", "tradable swing bottom", "cycle bottom", "dead-cat bounce risk"}

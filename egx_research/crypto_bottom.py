@@ -798,6 +798,262 @@ def _confidence_band(probability: float) -> str:
     return "low"
 
 
+def _add_regime_labels(frame: pd.DataFrame) -> pd.DataFrame:
+    frame = frame.copy()
+    date = pd.to_datetime(frame["date"])
+    nasdaq_ret_20 = _optional_column(frame, "macro_nasdaq").pct_change(20)
+    vix = _optional_column(frame, "macro_vix")
+    is_macro_stress = (vix > 28) | (nasdaq_ret_20 < -0.08)
+    is_bear = (frame["close"] < frame["sma200"]) & (frame["drawdown_365"] <= -0.20)
+    is_bull_correction = (frame["close"] >= frame["sma200"]) & (frame["drawdown_365"] <= -0.08)
+    halving_dates = [pd.Timestamp("2012-11-28"), pd.Timestamp("2016-07-09"), pd.Timestamp("2020-05-11"), pd.Timestamp("2024-04-19")]
+    is_post_halving = pd.Series(False, index=frame.index)
+    for halving in halving_dates:
+        days = (date - halving).dt.days
+        is_post_halving |= days.between(0, 365)
+    is_etf_era = date >= pd.Timestamp("2024-01-11")
+
+    primary = np.full(len(frame), "chop/range", dtype=object)
+    primary[is_etf_era.to_numpy()] = "ETF-era"
+    primary[is_post_halving.to_numpy()] = "post-halving expansion"
+    primary[is_bull_correction.fillna(False).to_numpy()] = "bull correction"
+    primary[is_bear.fillna(False).to_numpy()] = "bear market"
+    primary[is_macro_stress.fillna(False).to_numpy()] = "macro stress"
+    frame["primary_regime"] = primary
+
+    tags: list[str] = []
+    for idx in frame.index:
+        row_tags = []
+        if bool(is_macro_stress.loc[idx]):
+            row_tags.append("macro_stress")
+        if bool(is_bear.loc[idx]):
+            row_tags.append("bear_market")
+        if bool(is_bull_correction.loc[idx]):
+            row_tags.append("bull_correction")
+        if bool(is_post_halving.loc[idx]):
+            row_tags.append("post_halving")
+        if bool(is_etf_era.loc[idx]):
+            row_tags.append("etf_era")
+        if not row_tags:
+            row_tags.append("chop_range")
+        tags.append(",".join(row_tags))
+    frame["regime_tags"] = tags
+    return frame
+
+
+def _calibrate_regime_probability(
+    score: pd.Series,
+    label: pd.Series,
+    mask: pd.Series,
+    regimes: pd.Series,
+    current_regime: str,
+    latest_score: float,
+    global_base: float,
+) -> tuple[float, str, int, float]:
+    regime_mask = mask & (regimes == current_regime)
+    regime_rows = int(regime_mask.sum())
+    if regime_rows < 40:
+        global_prob, global_method = _calibrate_from_bins(score, label, mask, latest_score, global_base)
+        return global_prob, f"global_{global_method}_sparse_regime", regime_rows, 0.0
+    regime_base = float(label[regime_mask].mean()) if regime_mask.any() else global_base
+    regime_prob, regime_method = _calibrate_from_bins(score, label, regime_mask, latest_score, regime_base)
+    global_prob, _ = _calibrate_from_bins(score, label, mask, latest_score, global_base)
+    shrink = float(regime_rows / (regime_rows + 80.0))
+    blended = float(_clip01(global_prob * (1.0 - shrink) + regime_prob * shrink))
+    return blended, f"regime_{regime_method}", regime_rows, shrink
+
+
+def _future_return_drawdown(frame: pd.DataFrame, index: int, horizon: int) -> tuple[float | None, float | None]:
+    future_end = index + horizon
+    if future_end >= len(frame):
+        return None, None
+    close = float(frame.iloc[index]["close"])
+    if close <= 0:
+        return None, None
+    future = frame.iloc[index + 1 : future_end + 1]
+    future_return = float(frame.iloc[future_end]["close"] / close - 1.0)
+    future_drawdown = float(future["low"].min() / close - 1.0)
+    return future_return, future_drawdown
+
+
+def _bottom_type_label(frame: pd.DataFrame, index: int, horizon: int = 90) -> str | None:
+    future_return, future_drawdown = _future_return_drawdown(frame, index, horizon)
+    if future_return is None or future_drawdown is None:
+        return None
+    close = float(frame.iloc[index]["close"])
+    future_end = index + horizon
+    future_close = frame.iloc[index + 1 : future_end + 1]["close"]
+    future_sma200 = frame.iloc[index + 1 : future_end + 1]["sma200"]
+    reclaimed = bool((future_close > future_sma200).fillna(False).rolling(10, min_periods=3).sum().max() >= 5)
+    if future_return >= 0.35 and future_drawdown >= -0.12 and reclaimed:
+        return "cycle bottom"
+    if future_return >= 0.15 and future_drawdown >= -0.15:
+        return "tradable swing bottom"
+    if future_return >= 0.05 and future_drawdown >= -0.10:
+        return "local bounce"
+    return "dead-cat bounce risk"
+
+
+def _classify_current_bottom_type(latest: pd.Series, confidence: float, regime: str) -> dict[str, Any]:
+    dd = float(latest.get("drawdown_365", 0.0)) if pd.notna(latest.get("drawdown_365", np.nan)) else 0.0
+    rsi_val = float(latest.get("rsi14", 50.0)) if pd.notna(latest.get("rsi14", np.nan)) else 50.0
+    days_low = float(latest.get("days_since_30d_low", 999.0)) if pd.notna(latest.get("days_since_30d_low", np.nan)) else 999.0
+    close = float(latest["close"])
+    sma200 = float(latest.get("sma200", np.nan))
+    scores = {
+        "cycle bottom": 0.15 + max(0.0, -dd - 0.45) * 1.2 + confidence * 0.35,
+        "tradable swing bottom": 0.20 + max(0.0, -dd - 0.18) * 0.9 + confidence * 0.30,
+        "local bounce": 0.35 + (1.0 if days_low <= 7 else 0.0) * 0.15 + max(0.0, 55 - rsi_val) / 100.0,
+        "dead-cat bounce risk": 0.15 + (1.0 if pd.notna(sma200) and close < sma200 else 0.0) * 0.20 + max(0.0, 0.65 - confidence) * 0.5,
+    }
+    if regime == "macro stress":
+        scores["dead-cat bounce risk"] += 0.20
+    if regime == "bear market" and dd <= -0.35:
+        scores["cycle bottom"] += 0.15
+    total = sum(max(0.0, value) for value in scores.values()) or 1.0
+    probs = {key: float(max(0.0, value) / total) for key, value in scores.items()}
+    ranked = sorted(probs.items(), key=lambda item: item[1], reverse=True)
+    return {"primary": ranked[0][0], "probabilities": probs, "ranked": [{"type": key, "probability": value} for key, value in ranked]}
+
+
+def _recommendation_engine(confidence: float, bottom_type: str, regime: str, latest: pd.Series, levels: dict[str, float]) -> dict[str, Any]:
+    band = _confidence_band(confidence)
+    if regime == "macro stress" or bottom_type == "dead-cat bounce risk":
+        action, sizing = ("defensive", "0-5%")
+    elif band in {"extreme", "very_high"} and bottom_type in {"cycle bottom", "tradable swing bottom"}:
+        action, sizing = ("aggressive accumulation", "35-60%")
+    elif band == "high" and bottom_type in {"cycle bottom", "tradable swing bottom", "local bounce"}:
+        action, sizing = ("tranche", "15-35%")
+    elif band == "medium":
+        action, sizing = ("probe", "5-15%")
+    elif float(latest.get("days_since_30d_low", 999)) <= 3:
+        action, sizing = ("wait", "0-5%")
+    else:
+        action, sizing = ("defensive", "0-5%")
+    confirmation = levels.get("sma20")
+    if confirmation is None or not np.isfinite(confirmation) or float(latest["close"]) > confirmation:
+        confirmation = levels.get("prior_20d_high", float(latest["close"]) * 1.05)
+    return {
+        "action": action,
+        "sizing_guidance": sizing,
+        "confidence_band": band,
+        "invalidation_level": levels.get("invalidation_low"),
+        "confirmation_level": confirmation,
+        "what_would_change_confidence": [
+            "Higher score: regime-specific hitrates improve, spot demand broadens, or derivatives/on-chain reset strengthens.",
+            "Lower score: invalidation low breaks, macro stress tag appears, or top positive drivers fade.",
+        ],
+    }
+
+
+def _driver_attribution(components: pd.DataFrame, latest_idx: int, weights: dict[str, float], data_quality: dict[str, Any]) -> dict[str, Any]:
+    rows = []
+    for component, weight in weights.items():
+        if component not in components.columns:
+            continue
+        score = components.loc[latest_idx, component]
+        if pd.isna(score):
+            continue
+        score = float(score)
+        weight = float(weight)
+        rows.append(
+            {
+                "driver": component,
+                "score": score,
+                "weight": weight,
+                "positive_contribution": score * weight,
+                "negative_contribution": (1.0 - score) * weight,
+            }
+        )
+    positive = sorted(rows, key=lambda row: row["positive_contribution"], reverse=True)
+    negative = sorted(rows, key=lambda row: row["negative_contribution"], reverse=True)
+    source_penalties = []
+    for warning in data_quality.get("warnings", []):
+        source_penalties.append({"driver": "source_quality", "message": warning, "negative_contribution": 0.02})
+    return {
+        "positive_drivers": positive[:5],
+        "negative_drivers": negative[:5],
+        "waterfall": rows,
+        "source_penalties": source_penalties,
+    }
+
+
+def _walk_forward_validation(frame: pd.DataFrame, components: pd.DataFrame, horizon: int, tolerance: float, step_days: int = 63) -> tuple[pd.DataFrame, dict[str, Any]]:
+    labels = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
+    rows = []
+    start = min(max(500, horizon * 4), max(0, len(frame) - horizon - 1))
+    for idx in range(start, len(frame) - horizon - 1, step_days):
+        mask = _train_mask(frame, labels, idx)
+        if int(mask.sum()) < 40:
+            continue
+        weights, _, base_rate = _learn_component_weights(components, labels, mask)
+        blended = _weighted_score(components, weights)
+        latest_score = float(blended.iloc[idx])
+        prob, method, regime_rows, shrink = _calibrate_regime_probability(
+            blended,
+            labels,
+            mask,
+            frame["primary_regime"],
+            str(frame.iloc[idx]["primary_regime"]),
+            latest_score,
+            base_rate,
+        )
+        outcome = labels.iloc[idx]
+        fwd_return, fwd_drawdown = _future_return_drawdown(frame, idx, horizon)
+        rows.append(
+            {
+                "date": str(pd.Timestamp(frame.iloc[idx]["date"]).date()),
+                "horizon_days": horizon,
+                "tolerance": tolerance,
+                "regime": str(frame.iloc[idx]["primary_regime"]),
+                "confidence": prob,
+                "outcome": int(outcome) if pd.notna(outcome) else np.nan,
+                "forward_return": fwd_return,
+                "forward_drawdown": fwd_drawdown,
+                "training_rows": int(mask.sum()),
+                "regime_training_rows": regime_rows,
+                "regime_shrinkage": shrink,
+                "calibration_method": method,
+            }
+        )
+    validation = pd.DataFrame(rows)
+    if validation.empty:
+        return validation, {"rows": 0}
+    valid = validation.dropna(subset=["outcome", "confidence"])
+    brier = float(((valid["confidence"] - valid["outcome"]) ** 2).mean()) if not valid.empty else None
+    calibration_error = float(abs(valid["confidence"].mean() - valid["outcome"].mean())) if not valid.empty else None
+    summary = {"rows": int(len(valid)), "brier_score": brier, "calibration_error": calibration_error}
+    return validation, summary
+
+
+def _confidence_bucket_summary(validation: pd.DataFrame) -> list[dict[str, Any]]:
+    buckets = [
+        ("low", 0.0, 0.60),
+        ("medium", 0.60, 0.70),
+        ("high", 0.70, 0.80),
+        ("very_high", 0.80, 0.90),
+        ("extreme", 0.90, 1.01),
+    ]
+    rows = []
+    required = {"outcome", "confidence", "forward_drawdown", "forward_return"}
+    valid = validation.dropna(subset=["outcome", "confidence"]) if required.issubset(validation.columns) else pd.DataFrame()
+    for name, low, high in buckets:
+        subset = valid[(valid["confidence"] >= low) & (valid["confidence"] < high)] if not valid.empty else pd.DataFrame()
+        rows.append(
+            {
+                "bucket": name,
+                "confidence_min": low,
+                "confidence_max": min(high, 1.0),
+                "sample_size": int(len(subset)),
+                "observed_hitrate": float(subset["outcome"].mean()) if len(subset) else None,
+                "avg_forward_drawdown": float(subset["forward_drawdown"].mean()) if len(subset) and subset["forward_drawdown"].notna().any() else None,
+                "avg_forward_return": float(subset["forward_return"].mean()) if len(subset) and subset["forward_return"].notna().any() else None,
+                "is_sparse": bool(len(subset) < 5),
+            }
+        )
+    return rows
+
+
 def _recommendation(probability: float, strict_probability: float, latest: pd.Series) -> str:
     if probability >= 0.85 and strict_probability >= 0.75:
         return "Accumulation favored: staged buys are justified, but keep invalidation below the recent low."
@@ -849,6 +1105,35 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
         )
     grid_html = grid.to_html(index=False, float_format=lambda x: f"{x:.3f}")
     hitrate_html = hitrates.to_html(index=False, float_format=lambda x: f"{x:.3f}") if not hitrates.empty else "<p>No hitrate table.</p>"
+    bucket_rows = []
+    for row in summary.get("confidence_buckets", []):
+        hitrate = _format_pct(row["observed_hitrate"]) if row.get("observed_hitrate") is not None else "n/a"
+        fwd_dd = _format_pct(row["avg_forward_drawdown"]) if row.get("avg_forward_drawdown") is not None else "n/a"
+        fwd_ret = _format_pct(row["avg_forward_return"]) if row.get("avg_forward_return") is not None else "n/a"
+        sparse = "yes" if row.get("is_sparse") else "no"
+        bucket_rows.append(
+            "<tr>"
+            f"<td>{html.escape(row['bucket'])}</td>"
+            f"<td>{row['sample_size']}</td>"
+            f"<td>{hitrate}</td>"
+            f"<td>{fwd_dd}</td>"
+            f"<td>{fwd_ret}</td>"
+            f"<td>{sparse}</td>"
+            "</tr>"
+        )
+    bucket_html = "".join(bucket_rows) or "<tr><td colspan='6'>No validation buckets available.</td></tr>"
+
+    driver_pos = "".join(
+        f"<li>{html.escape(row['driver'])}: {row['positive_contribution']:.3f}</li>"
+        for row in summary.get("driver_attribution", {}).get("positive_drivers", [])[:3]
+    )
+    driver_neg = "".join(
+        f"<li>{html.escape(row['driver'])}: {row['negative_contribution']:.3f}</li>"
+        for row in summary.get("driver_attribution", {}).get("negative_drivers", [])[:3]
+    )
+    recommendation_details = summary.get("recommendation_details", {})
+    bottom_type = summary.get("bottom_type", {})
+    validation_summary = summary.get("walk_forward_validation", {})
     
     dq = summary.get("data_quality", {})
     dq_warnings_html = ""
@@ -909,6 +1194,8 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <div class="summary">
     <p><strong>Current read:</strong> {best['confidence_pct']:.1f}% confidence that the recent BTC low holds over {best['horizon_days']} days with a {best['tolerance_pct']:.0f}% allowed breach. Band: <strong>{html.escape(best['confidence_band'])}</strong>.</p>
     <p><strong>Recommendation:</strong> {html.escape(summary['recommendation'])}</p>
+    <p><strong>Action:</strong> {html.escape(str(recommendation_details.get('action', 'n/a')))} | <strong>Sizing:</strong> {html.escape(str(recommendation_details.get('sizing_guidance', 'n/a')))}</p>
+    <p><strong>Regime:</strong> {html.escape(str(summary.get('regime', {}).get('primary', 'n/a')))} | <strong>Bottom type:</strong> {html.escape(str(bottom_type.get('primary', 'n/a')))}</p>
     <p><strong>Liquidation Driver:</strong> {html.escape(summary.get('washout_driver_text', ''))}</p>
     <p><strong>Important:</strong> this is a historical probability score, not a guarantee that BTC cannot print a lower wick.</p>
   </div>
@@ -952,9 +1239,29 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
     <tbody>{''.join(component_rows)}</tbody>
   </table>
 
+  <h2>Regime, Bottom Type, And Recommendation</h2>
+  <p><strong>Primary regime:</strong> {html.escape(str(summary.get('regime', {}).get('primary', 'n/a')))} ({html.escape(str(summary.get('regime', {}).get('tags', '')))}).</p>
+  <p><strong>Bottom type:</strong> {html.escape(str(bottom_type.get('primary', 'n/a')))}. This augments the horizon/tolerance confidence and does not replace it.</p>
+  <p><strong>Action:</strong> {html.escape(str(recommendation_details.get('action', 'n/a')))}. <strong>Sizing guidance:</strong> {html.escape(str(recommendation_details.get('sizing_guidance', 'n/a')))}.</p>
+  <p><strong>Confirmation:</strong> ${_format_num(recommendation_details.get('confirmation_level', np.nan))}. <strong>Invalidation:</strong> ${_format_num(recommendation_details.get('invalidation_level', np.nan))}.</p>
+
   <h2>Confidence Grid</h2>
   <p>Use the 5% tolerance rows as the stricter clean-bottom view and 10% rows as the tactical bottom-zone view.</p>
   {grid_html}
+
+  <h2>Walk-Forward Reliability</h2>
+  <p>Brier score: {validation_summary.get('brier_score', 'n/a')}. Calibration error: {validation_summary.get('calibration_error', 'n/a')}. Sparse buckets are flagged and should not be overclaimed.</p>
+  <table>
+    <thead><tr><th>Bucket</th><th>Samples</th><th>Observed hitrate</th><th>Avg forward drawdown</th><th>Avg forward return</th><th>Sparse</th></tr></thead>
+    <tbody>{bucket_html}</tbody>
+  </table>
+
+  <h2>Driver Attribution</h2>
+  <p>Top bullish and bearish drivers are based on latest component scores and selected calibration weights.</p>
+  <h3>Bullish</h3>
+  <ul>{driver_pos or '<li>No positive drivers available.</li>'}</ul>
+  <h3>Bearish / Missing</h3>
+  <ul>{driver_neg or '<li>No bearish drivers available.</li>'}</ul>
 
   <h2>Recommended Action</h2>
   <p>{html.escape(summary['recommendation'])}</p>
@@ -994,6 +1301,7 @@ def run_crypto_bottom_score(
     data = load_crypto_feature_data(config)
     data, optional_sources = _merge_optional_sources(data, config)
     frame = _add_market_indicators(data)
+    frame = _add_regime_labels(frame)
     components = _component_scores(frame)
     if as_of_date is not None:
         as_of = pd.Timestamp(as_of_date)
@@ -1005,6 +1313,7 @@ def run_crypto_bottom_score(
         as_of = pd.Timestamp(frame["date"].max())
         latest_idx = int(frame.index[-1])
     latest = frame.loc[latest_idx]
+    current_regime = str(latest["primary_regime"])
     data_quality = run_data_quality_checks(config, frame, as_of)
 
 
@@ -1064,10 +1373,22 @@ def run_crypto_bottom_score(
         for tolerance in TOLERANCES:
             labels = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
             mask = _train_mask(frame, labels, latest_idx)
-            weights, hitrates, base_rate = _learn_component_weights(components, labels, mask)
+            weights, hitrates, global_base_rate = _learn_component_weights(components, labels, mask)
+            base_rate = global_base_rate
+            regime_mask = mask & (frame["primary_regime"] == current_regime)
+            if int(regime_mask.sum()) >= 40:
+                weights, hitrates, base_rate = _learn_component_weights(components, labels, regime_mask)
             blended_score = _weighted_score(components, weights)
             latest_score = float(blended_score.iloc[latest_idx])
-            rule_prob, calibration_method = _calibrate_from_bins(blended_score, labels, mask, latest_score, base_rate)
+            rule_prob, calibration_method, regime_rows, regime_shrinkage = _calibrate_regime_probability(
+                blended_score,
+                labels,
+                mask,
+                frame["primary_regime"],
+                current_regime,
+                latest_score,
+                global_base_rate,
+            )
             ml_prob, coefs = _fit_logistic_probability(components, labels, mask, latest_idx)
             confidence = float(_clip01(rule_prob if ml_prob is None else 0.55 * rule_prob + 0.45 * ml_prob))
             adjusted_confidence = confidence * penalty_factor
@@ -1079,7 +1400,11 @@ def run_crypto_bottom_score(
                 "tolerance": tolerance,
                 "tolerance_pct": tolerance * 100,
                 "training_rows": int(mask.sum()),
+                "regime": current_regime,
+                "regime_training_rows": regime_rows,
+                "regime_shrinkage": regime_shrinkage,
                 "base_hitrate": base_rate,
+                "global_base_hitrate": global_base_rate,
                 "rule_probability": rule_prob,
                 "ml_probability": ml_prob,
                 "confidence": confidence,
@@ -1116,6 +1441,14 @@ def run_crypto_bottom_score(
     levels = _support_resistance(latest, best_row["tolerance"])
     recommendation = _recommendation(float(best_row["confidence"]), strict_probability, latest)
     adjusted_recommendation = _recommendation(float(best_row["adjusted_confidence"]), strict_adjusted_probability, latest)
+    bottom_type = _classify_current_bottom_type(latest, float(best_row["adjusted_confidence"]), current_regime)
+    recommendation_details = _recommendation_engine(
+        float(best_row["adjusted_confidence"]),
+        str(bottom_type["primary"]),
+        current_regime,
+        latest,
+        levels,
+    )
 
     component_snapshot = [
         {
@@ -1127,6 +1460,14 @@ def run_crypto_bottom_score(
         for column in DEFAULT_PRIOR_WEIGHTS
     ]
     component_snapshot.sort(key=lambda item: item["weight"], reverse=True)
+    driver_attribution = _driver_attribution(components, latest_idx, best_weights, data_quality)
+    validation, validation_summary = _walk_forward_validation(
+        frame,
+        components,
+        int(best_row["horizon_days"]),
+        float(best_row["tolerance"]),
+    )
+    confidence_buckets = _confidence_bucket_summary(validation)
 
     summary = {
         "run_id": run_name,
@@ -1142,6 +1483,8 @@ def run_crypto_bottom_score(
         "latest": {
             "date": str(pd.Timestamp(latest["date"]).date()),
             "close": float(latest["close"]),
+            "primary_regime": current_regime,
+            "regime_tags": str(latest["regime_tags"]),
             "rsi14": float(latest["rsi14"]) if pd.notna(latest["rsi14"]) else None,
             "drawdown_365": float(latest["drawdown_365"]) if pd.notna(latest["drawdown_365"]) else None,
             "days_since_30d_low": float(latest["days_since_30d_low"]) if pd.notna(latest["days_since_30d_low"]) else None,
@@ -1153,8 +1496,14 @@ def run_crypto_bottom_score(
         "washout_driver_text": washout_text,
         "recommendation": recommendation,
         "adjusted_recommendation": adjusted_recommendation,
+        "recommendation_details": recommendation_details,
+        "bottom_type": bottom_type,
+        "regime": {"primary": current_regime, "tags": str(latest["regime_tags"])},
         "levels": levels,
         "component_snapshot": component_snapshot,
+        "driver_attribution": driver_attribution,
+        "walk_forward_validation": validation_summary,
+        "confidence_buckets": confidence_buckets,
         "model_note": "Probability recent low holds inside horizon/tolerance; not a guarantee of no lower print.",
         "data_quality": data_quality,
         "reliability_rating": data_quality["reliability_rating"],
@@ -1174,7 +1523,23 @@ def run_crypto_bottom_score(
     derivatives_audit["derivatives_overall"] = components["derivatives"]
     derivatives_audit.to_csv(run_dir / "bottom_derivatives_audit.csv", index=False)
 
+    type_audit_rows = []
+    for idx in frame.index:
+        label = _bottom_type_label(frame, int(idx))
+        if label is None:
+            continue
+        type_audit_rows.append(
+            {
+                "date": frame.loc[idx, "date"],
+                "primary_regime": frame.loc[idx, "primary_regime"],
+                "bottom_type_label": label,
+            }
+        )
+    pd.DataFrame(type_audit_rows).to_csv(run_dir / "bottom_type_audit.csv", index=False)
+
     audit_components = components.copy()
+    audit_components["primary_regime"] = frame["primary_regime"]
+    audit_components["regime_tags"] = frame["regime_tags"]
     for column in derivatives_audit.columns:
         if column != "date":
             audit_components[column] = derivatives_audit[column]
@@ -1182,7 +1547,12 @@ def run_crypto_bottom_score(
     grid.to_csv(run_dir / "bottom_probability_grid.csv", index=False)
     audit_components.to_csv(run_dir / "bottom_component_scores.csv", index=False)
     hitrates_all.to_csv(run_dir / "bottom_feature_hitrates.csv", index=False)
+    if not validation.empty:
+        validation.to_csv(run_dir / "bottom_walkforward_validation.csv", index=False)
+    pd.DataFrame(confidence_buckets).to_csv(run_dir / "bottom_confidence_buckets.csv", index=False)
     write_json(run_dir / "bottom_model_coefficients.json", coef_payload)
+    write_json(run_dir / "bottom_driver_attribution.json", to_native(driver_attribution))
+    write_json(run_dir / "bottom_validation_summary.json", to_native({"summary": validation_summary, "confidence_buckets": confidence_buckets}))
     write_json(run_dir / "bottom_score_summary.json", to_native(summary))
     report_path = run_dir / "bottom_report.html"
     report_path.write_text(_report_html(summary, grid, components, hitrates_all), encoding="utf-8")

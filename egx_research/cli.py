@@ -157,20 +157,41 @@ def crypto_bottom_score(
     as_of_date: str | None = typer.Option(
         None, "--as-of-date", help="Score using data on or before YYYY-MM-DD."
     ),
+    require_source: list[str] | None = typer.Option(
+        None, "--require-source", help="Require a source name to be fresh/present; repeatable."
+    ),
+    no_html: bool = typer.Option(False, "--no-html", help="Delete generated HTML report after writing JSON/CSVs."),
+    refresh_first: bool = typer.Option(False, "--refresh-first", help="Run crypto-sync before scoring."),
 ) -> None:
     config = load_crypto_config(config_path)
+    if refresh_first:
+        sync_crypto_data(config)
     result = run_crypto_bottom_score(
         config=config,
         config_path=config_path,
         run_id=run_id,
         as_of_date=as_of_date,
     )
+    if require_source:
+        statuses = result.summary.get("data_quality", {}).get("source_statuses", {})
+        missing = []
+        for source in require_source:
+            status = statuses.get(source, {}).get("status")
+            if status not in {"success", "partial"}:
+                missing.append(f"{source}:{status or 'missing'}")
+        if missing:
+            raise typer.BadParameter(f"Required source not usable: {', '.join(missing)}")
+    if no_html and result.report_path.exists():
+        result.report_path.unlink()
     best = result.summary["best_case"]
+    rec = result.summary.get("recommendation_details", {})
     typer.echo(
         "crypto_bottom_score="
         f"{result.run_dir} confidence={best['confidence_pct']:.1f}% "
+        f"regime={result.summary.get('regime', {}).get('primary', 'n/a')} "
+        f"action={rec.get('action', 'n/a')} "
         f"horizon={best['horizon_days']}d tolerance={best['tolerance_pct']:.0f}% "
-        f"report={result.report_path}"
+        f"report={'disabled' if no_html else result.report_path}"
     )
 
 

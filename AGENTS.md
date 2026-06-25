@@ -47,6 +47,8 @@
 - BTC research: `egx crypto-research --config config/crypto_btc.yaml --run-id <run_id>`
 - BTC report: `egx crypto-report --run-id <run_id>`
 - BTC paper track: `egx crypto-paper-track --config config/crypto_btc.yaml --model-run-id <run_id> --start-date YYYY-MM-DD --run-id <paper_id>`
+- BTC bottom score: `egx crypto-bottom-score --config config/crypto_btc.yaml`
+- BTC bottom score as-of: `egx crypto-bottom-score --config config/crypto_btc.yaml --as-of-date YYYY-MM-DD`
 
 ## Repo Rules
 
