@@ -306,3 +306,11 @@ def test_bottom_score_integration_does_not_affect_math(tmp_path) -> None:
     # but the value should not be affected by the reliability_score.
     best_row = res.summary["best_case"]
     assert best_row["confidence_pct"] == pytest.approx(best_row["confidence"] * 100)
+
+
+def test_futures_positioning_source_metadata() -> None:
+    assert "futures_positioning" in SOURCE_REGISTRY
+    meta = SOURCE_REGISTRY["futures_positioning"]
+    assert meta["filename"] == "futures_positioning.csv"
+    assert meta["critical"] is False
+    assert "derivatives_taker_buy_sell_ratio" in meta["required_columns"]

@@ -65,6 +65,8 @@ def _load_optional_source(raw_dir: Path, filename: str) -> pd.DataFrame | None:
 # Columns the component scoring reads via _optional_column.
 _SIGNAL_COLUMNS = [
     "funding_rate_mean", "derivatives_open_interest", "derivatives_liquidations_long_usd",
+    "derivatives_basis", "derivatives_taker_buy_sell_ratio",
+    "derivatives_long_short_ratio", "derivatives_leverage_ratio",
     "CapMVRVCur", "FlowInExUSD", "FlowOutExUSD", "AdrActCnt", "TxCnt",
     "etf_net_flow_usd", "etf_net_flow_btc", "spot_coinbase_premium",
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
@@ -75,6 +77,10 @@ _SIGNAL_COLUMNS = [
 _SIGNAL_ALIASES = {
     "derivatives_open_interest": "open_interest",
     "derivatives_open_interest_value": "open_interest_value",
+    "derivatives_basis": "basis",
+    "derivatives_taker_buy_sell_ratio": "taker_buy_sell_ratio",
+    "derivatives_long_short_ratio": "long_short_ratio",
+    "derivatives_leverage_ratio": "leverage_ratio",
     "spot_coinbase_close": "coinbase_close",
     "spot_coinbase_premium": "coinbase_premium",
     "liquidity_stablecoin_supply": "stablecoin_supply",
@@ -103,6 +109,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
     optional_files = {
         "btc_etf_flows.csv": "etf",
         "open_interest.csv": "derivatives",
+        "futures_positioning.csv": "derivatives",
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
         "options_skew.csv": "options",
@@ -220,6 +227,62 @@ def _optional_column(frame: pd.DataFrame, column: str) -> pd.Series:
     return pd.Series(np.nan, index=frame.index, dtype=float)
 
 
+def _derivatives_subsignals(frame: pd.DataFrame) -> pd.DataFrame:
+    funding = _optional_column(frame, "funding_rate_mean")
+    funding_reset = _scale_between(-funding, -0.0002, 0.0015)
+    funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
+    oi = _optional_column(frame, "derivatives_open_interest")
+    oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
+    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
+    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
+
+    out = pd.DataFrame(
+        {
+            "sub_derivatives_funding_reset": funding_reset,
+            "sub_derivatives_funding_cooling": funding_cooling,
+            "sub_derivatives_oi_flush": oi_flush,
+            "sub_derivatives_long_liq_spike": long_liq_spike,
+        },
+        index=frame.index,
+    )
+
+    has_new_positioning = any(
+        _optional_column(frame, column).notna().any()
+        for column in [
+            "derivatives_basis",
+            "derivatives_taker_buy_sell_ratio",
+            "derivatives_long_short_ratio",
+            "derivatives_leverage_ratio",
+        ]
+    )
+    if not has_new_positioning:
+        return out
+
+    spot_led_bounce = pd.Series(np.nan, index=frame.index, dtype=float)
+    if oi.notna().any():
+        spot_led = frame["close"].pct_change(5) - oi.pct_change(5)
+        spot_led_bounce = _scale_between(spot_led, -0.05, 0.15)
+
+    lev = _optional_column(frame, "derivatives_leverage_ratio")
+    lev_flush = _scale_between(-lev.pct_change(7), -0.10, 0.20)
+    lev_mean_90 = lev.rolling(90, min_periods=30).mean()
+    lev_std_90 = lev.rolling(90, min_periods=30).std()
+    lev_z = (lev - lev_mean_90) / lev_std_90.replace(0, np.nan)
+    lev_cheap = 1.0 - _scale_between(lev_z, -1.5, 1.5)
+    leverage_reset = pd.concat([lev_flush, lev_cheap], axis=1).mean(axis=1)
+
+    ls_ratio = _optional_column(frame, "derivatives_long_short_ratio")
+    taker_ratio = _optional_column(frame, "derivatives_taker_buy_sell_ratio")
+    ls_penalty = 1.0 - _scale_between(ls_ratio, 1.2, 2.2)
+    taker_penalty = 1.0 - _scale_between(taker_ratio, 1.0, 1.3)
+    overheated_long_short_penalty = pd.concat([ls_penalty, taker_penalty], axis=1).mean(axis=1)
+
+    out["sub_derivatives_spot_led_bounce"] = spot_led_bounce
+    out["sub_derivatives_leverage_reset"] = leverage_reset
+    out["sub_derivatives_overheated_long_short_penalty"] = overheated_long_short_penalty
+    return out
+
+
 def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame({"date": frame["date"]})
 
@@ -253,14 +316,8 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     post_flush = _scale_between(frame["vol_compression"], -0.10, 0.35)
     out["capitulation"] = pd.concat([drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap], axis=1).mean(axis=1)
 
-    funding = _optional_column(frame, "funding_rate_mean")
-    funding_reset = _scale_between(-funding, -0.0002, 0.0015)
-    funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
-    oi = _optional_column(frame, "derivatives_open_interest")
-    oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
-    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
-    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
-    out["derivatives"] = pd.concat([funding_reset, funding_cooling, oi_flush, long_liq_spike], axis=1).mean(axis=1)
+    derivative_signals = _derivatives_subsignals(frame)
+    out["derivatives"] = derivative_signals.mean(axis=1)
 
     mvrv = _optional_column(frame, "CapMVRVCur")
     mvrv_cheap = 1.0 - _scale_between(mvrv, 1.0, 2.7)
@@ -809,8 +866,18 @@ def run_crypto_bottom_score(
         "reliability_note": data_quality["reliability_note"],
     }
 
+    derivatives_audit = _derivatives_subsignals(frame).copy()
+    derivatives_audit.insert(0, "date", frame["date"])
+    derivatives_audit["derivatives_overall"] = components["derivatives"]
+    derivatives_audit.to_csv(run_dir / "bottom_derivatives_audit.csv", index=False)
+
+    audit_components = components.copy()
+    for column in derivatives_audit.columns:
+        if column != "date":
+            audit_components[column] = derivatives_audit[column]
+
     grid.to_csv(run_dir / "bottom_probability_grid.csv", index=False)
-    components.to_csv(run_dir / "bottom_component_scores.csv", index=False)
+    audit_components.to_csv(run_dir / "bottom_component_scores.csv", index=False)
     hitrates_all.to_csv(run_dir / "bottom_feature_hitrates.csv", index=False)
     write_json(run_dir / "bottom_model_coefficients.json", coef_payload)
     write_json(run_dir / "bottom_score_summary.json", to_native(summary))

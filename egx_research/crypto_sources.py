@@ -92,6 +92,22 @@ SOURCE_REGISTRY = {
         "env_var": "BINANCE_API_KEY",
         "critical": True,
     },
+    "futures_positioning": {
+        "provider": "Binance Futures",
+        "category": "derivatives",
+        "paid_free": "free",
+        "freshness_sla_hours": 36,
+        "required_columns": [
+            "derivatives_open_interest",
+            "derivatives_basis",
+            "derivatives_taker_buy_sell_ratio",
+            "derivatives_long_short_ratio",
+            "derivatives_leverage_ratio",
+        ],
+        "filename": "futures_positioning.csv",
+        "env_var": "",
+        "critical": False,
+    },
     "coinbase_premium": {
         "provider": "Coinbase",
         "category": "spot",
