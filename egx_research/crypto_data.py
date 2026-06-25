@@ -39,6 +39,7 @@ BINANCE_KLINE_COLUMNS = [
 
 OPTIONAL_FEATURE_PREFIXES = {
     "open_interest.csv": "derivatives",
+    "futures_positioning.csv": "derivatives",
     "coinbase_premium.csv": "spot",
     "stablecoin_supply.csv": "liquidity",
     "exchange_stablecoin_reserves.csv": "liquidity",
@@ -48,6 +49,13 @@ OPTIONAL_FEATURE_PREFIXES = {
 
 OPTIONAL_CANONICAL_COLUMNS = {
     "open_interest.csv": {"derivatives_open_interest", "derivatives_open_interest_value"},
+    "futures_positioning.csv": {
+        "derivatives_open_interest",
+        "derivatives_basis",
+        "derivatives_taker_buy_sell_ratio",
+        "derivatives_long_short_ratio",
+        "derivatives_leverage_ratio",
+    },
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
     "exchange_stablecoin_reserves.csv": {"liquidity_exchange_stablecoin_reserves"},
@@ -508,6 +516,154 @@ def fetch_open_interest(config: CryptoConfig) -> pd.DataFrame:
     )
 
 
+def _load_futures_positioning_csv(path: Path) -> pd.DataFrame:
+    columns = [
+        "date",
+        "derivatives_open_interest",
+        "derivatives_basis",
+        "derivatives_taker_buy_sell_ratio",
+        "derivatives_long_short_ratio",
+        "derivatives_leverage_ratio",
+    ]
+    if not path.exists():
+        return pd.DataFrame(columns=columns)
+    frame = pd.read_csv(path, parse_dates=["date"])
+    aliases = {
+        "open_interest": "derivatives_open_interest",
+        "basis": "derivatives_basis",
+        "taker_buy_sell_ratio": "derivatives_taker_buy_sell_ratio",
+        "long_short_ratio": "derivatives_long_short_ratio",
+        "leverage_ratio": "derivatives_leverage_ratio",
+    }
+    frame = frame.rename(columns=aliases)
+    for column in columns:
+        if column not in frame.columns:
+            frame[column] = np.nan
+    return frame[columns].sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
+def _fetch_binance_futures_data(
+    config: CryptoConfig,
+    endpoint: str,
+    params: dict[str, Any],
+) -> list[dict[str, Any]]:
+    url = f"{config.sources.binance_futures_base_url.rstrip('/')}{endpoint}"
+    start_ms = _date_to_ms(config.sources.funding_start)
+    cursor_ms = _date_to_ms(pd.Timestamp.utcnow().normalize())
+    rows: list[dict[str, Any]] = []
+
+    while cursor_ms >= start_ms:
+        payload = _get_json(
+            url,
+            {
+                **params,
+                "period": "1d",
+                "limit": 500,
+                "endTime": cursor_ms,
+            },
+        )
+        if not payload:
+            break
+        rows.extend(payload)
+        earliest = min(int(item["timestamp"]) for item in payload if "timestamp" in item)
+        next_cursor = earliest - 1
+        if next_cursor >= cursor_ms:
+            break
+        cursor_ms = next_cursor
+
+    return rows
+
+
+def fetch_futures_positioning(config: CryptoConfig) -> pd.DataFrame:
+    """Fetch daily futures positioning with local CSV fallback."""
+    fallback_path = Path(config.data.raw_dir) / "futures_positioning.csv"
+    symbol = config.data.symbol
+    frames: list[pd.DataFrame] = []
+
+    try:
+        oi_rows = _fetch_binance_futures_data(config, "/futures/data/openInterestHist", {"symbol": symbol})
+        if oi_rows:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "date": [_utc_day(int(item["timestamp"]), unit="ms") for item in oi_rows],
+                        "derivatives_open_interest": [float(item["sumOpenInterest"]) for item in oi_rows],
+                    }
+                )
+            )
+
+        basis_rows = _fetch_binance_futures_data(
+            config,
+            "/futures/data/basis",
+            {"pair": symbol, "contractType": "PERPETUAL"},
+        )
+        if basis_rows:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "date": [_utc_day(int(item["timestamp"]), unit="ms") for item in basis_rows],
+                        "derivatives_basis": [
+                            float(item.get("basisRate", item.get("basis", np.nan)))
+                            for item in basis_rows
+                        ],
+                    }
+                )
+            )
+
+        taker_rows = _fetch_binance_futures_data(
+            config,
+            "/futures/data/takerlongshortRatio",
+            {"symbol": symbol},
+        )
+        if taker_rows:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "date": [_utc_day(int(item["timestamp"]), unit="ms") for item in taker_rows],
+                        "derivatives_taker_buy_sell_ratio": [
+                            float(item["buySellRatio"]) for item in taker_rows
+                        ],
+                    }
+                )
+            )
+
+        long_short_rows = _fetch_binance_futures_data(
+            config,
+            "/futures/data/globalLongShortAccountRatio",
+            {"symbol": symbol},
+        )
+        if long_short_rows:
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "date": [_utc_day(int(item["timestamp"]), unit="ms") for item in long_short_rows],
+                        "derivatives_long_short_ratio": [
+                            float(item["longShortRatio"]) for item in long_short_rows
+                        ],
+                    }
+                )
+            )
+    except Exception:
+        if is_source_required(config, "futures_positioning"):
+            raise
+        return _load_futures_positioning_csv(fallback_path)
+
+    if not frames:
+        return _load_futures_positioning_csv(fallback_path)
+
+    merged = frames[0].sort_values("date").drop_duplicates("date", keep="last")
+    for frame in frames[1:]:
+        merged = merged.merge(
+            frame.sort_values("date").drop_duplicates("date", keep="last"),
+            on="date",
+            how="outer",
+        )
+    for column in OPTIONAL_CANONICAL_COLUMNS["futures_positioning.csv"]:
+        if column not in merged.columns:
+            merged[column] = np.nan
+    return merged[["date", *sorted(OPTIONAL_CANONICAL_COLUMNS["futures_positioning.csv"])]].sort_values("date").reset_index(drop=True)
+
+
 def fetch_coinbase_premium(config: CryptoConfig) -> pd.DataFrame:
     """Compute Coinbase premium from Coinbase daily close vs Binance daily close."""
     url = "https://api.exchange.coinbase.com/products/BTC-USD/candles"
@@ -789,6 +945,7 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         raw_dir / "funding_rates.csv",
         raw_dir / "btc_etf_flows.csv",
         raw_dir / "open_interest.csv",
+        raw_dir / "futures_positioning.csv",
         raw_dir / "coinbase_premium.csv",
         raw_dir / "stablecoin_supply.csv",
         raw_dir / "exchange_stablecoin_reserves.csv",
@@ -941,6 +1098,7 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     _sync_optional_source("funding_rates", fetch_funding_rates, config, raw_dir, "funding_rates.csv", summary)
     _sync_optional_source("btc_etf_flows", fetch_btc_etf_flows, config, raw_dir, "btc_etf_flows.csv", summary)
     _sync_optional_source("open_interest", fetch_open_interest, config, raw_dir, "open_interest.csv", summary)
+    _sync_optional_source("futures_positioning", fetch_futures_positioning, config, raw_dir, "futures_positioning.csv", summary)
     _sync_optional_source("coinbase_premium", fetch_coinbase_premium, config, raw_dir, "coinbase_premium.csv", summary)
     _sync_optional_source("stablecoin_supply", fetch_stablecoin_supply, config, raw_dir, "stablecoin_supply.csv", summary)
     _sync_optional_source("exchange_stablecoin_reserves", fetch_exchange_stablecoin_reserves, config, raw_dir, "exchange_stablecoin_reserves.csv", summary)

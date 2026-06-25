@@ -514,3 +514,10 @@ def test_etf_demand_flow_regimes_and_gbtc_noise() -> None:
     assert noise_score_val > neg_score_val
     assert noise_score_val > 0.35
 
+
+def test_futures_positioning_source_metadata() -> None:
+    assert "futures_positioning" in SOURCE_REGISTRY
+    meta = SOURCE_REGISTRY["futures_positioning"]
+    assert meta["filename"] == "futures_positioning.csv"
+    assert meta["critical"] is False
+    assert "derivatives_taker_buy_sell_ratio" in meta["required_columns"]

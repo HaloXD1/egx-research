@@ -54,6 +54,10 @@ sources:
       enabled: true
       env_var: BINANCE_API_KEY
       required: false
+    futures_positioning:
+      enabled: true
+      env_var: ""
+      required: false
     coinbase_premium:
       enabled: true
       env_var: COINBASE_API_KEY

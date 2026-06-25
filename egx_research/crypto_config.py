@@ -87,6 +87,7 @@ class CryptoSourceConfig:
             "funding_rates": {"enabled": True, "env_var": "", "required": False},
             "btc_etf_flows": {"enabled": True, "env_var": "", "required": False},
             "open_interest": {"enabled": True, "env_var": "BINANCE_API_KEY", "required": False},
+            "futures_positioning": {"enabled": True, "env_var": "", "required": False},
             "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
             "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
             "exchange_stablecoin_reserves": {"enabled": True, "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY", "required": False},

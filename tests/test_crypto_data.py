@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_data import (
@@ -17,6 +18,7 @@ from egx_research.crypto_data import (
     fetch_stablecoin_supply,
     fetch_deribit_options,
     fetch_exchange_stablecoin_reserves,
+    fetch_futures_positioning,
 )
 
 
@@ -311,3 +313,51 @@ def test_fetch_exchange_stablecoin_reserves_missing_graceful(tmp_path, monkeypat
     assert df.empty
     assert list(df.columns) == ["date", "exchange_stablecoin_reserves"]
 
+
+def test_fetch_futures_positioning_from_local_csv(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-01")],
+            "open_interest": [1000.0],
+            "basis": [0.001],
+            "taker_buy_sell_ratio": [1.05],
+            "long_short_ratio": [1.2],
+            "leverage_ratio": [0.8],
+        }
+    ).to_csv(tmp_path / "futures_positioning.csv", index=False)
+
+    def fail_fetch(url, params=None):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", fail_fetch)
+    frame = fetch_futures_positioning(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["derivatives_open_interest"] == 1000.0
+    assert frame.iloc[0]["derivatives_basis"] == 0.001
+
+
+def test_fetch_futures_positioning_api_payloads(monkeypatch) -> None:
+    config = CryptoConfig()
+    ts = 1704067200000
+
+    def mock_get_json(url, params=None):
+        if "openInterestHist" in url:
+            return [{"timestamp": ts, "sumOpenInterest": "1000"}]
+        if "basis" in url:
+            return [{"timestamp": ts, "basisRate": "0.002"}]
+        if "takerlongshortRatio" in url:
+            return [{"timestamp": ts, "buySellRatio": "1.1"}]
+        if "globalLongShortAccountRatio" in url:
+            return [{"timestamp": ts, "longShortRatio": "1.3"}]
+        return []
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    frame = fetch_futures_positioning(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["derivatives_open_interest"] == 1000.0
+    assert frame.iloc[0]["derivatives_basis"] == 0.002
+    assert frame.iloc[0]["derivatives_taker_buy_sell_ratio"] == 1.1
+    assert frame.iloc[0]["derivatives_long_short_ratio"] == 1.3
+    assert pd.isna(frame.iloc[0]["derivatives_leverage_ratio"])

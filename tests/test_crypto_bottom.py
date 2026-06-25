@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -8,6 +10,8 @@ from egx_research.crypto_bottom import (
     _add_market_indicators,
     _component_scores,
     _merge_optional_sources,
+    _scale_between,
+    run_crypto_bottom_score,
 )
 from egx_research.crypto_config import CryptoConfig
 
@@ -218,3 +222,102 @@ def test_bottom_score_with_exchange_reserves_and_dry_powder_ratio(tmp_path) -> N
     # (or stay capped at 1.0)
     assert scores_high["macro"].iloc[-1] >= scores["macro"].iloc[-1]
 
+
+def test_existing_open_interest_regression() -> None:
+    rows = 30
+    dates = pd.date_range("2024-01-01", periods=rows, freq="D")
+    close = 40000.0 + np.arange(rows) * 100
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "funding_rate_mean": np.full(rows, 0.0001),
+            "derivatives_open_interest": [10000.0 + i * 100 for i in range(rows)],
+            "derivatives_liquidations_long_usd": np.full(rows, 50000.0),
+        }
+    )
+
+    frame = _add_market_indicators(frame)
+    scores = _component_scores(frame)
+    funding = frame["funding_rate_mean"]
+    funding_reset = _scale_between(-funding, -0.0002, 0.0015)
+    funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
+    oi_flush = _scale_between(-frame["derivatives_open_interest"].pct_change(7), 0.02, 0.20)
+    long_liq = frame["derivatives_liquidations_long_usd"]
+    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
+    expected = pd.concat([funding_reset, funding_cooling, oi_flush, long_liq_spike], axis=1).mean(axis=1)
+
+    pd.testing.assert_series_equal(scores["derivatives"], expected, check_names=False)
+
+
+def test_futures_positioning_changes_derivatives_score() -> None:
+    rows = 120
+    dates = pd.date_range("2024-01-01", periods=rows, freq="D")
+    close = np.linspace(40000.0, 43000.0, rows)
+    base = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "funding_rate_mean": np.full(rows, 0.0001),
+            "derivatives_open_interest": np.linspace(10000, 8000, rows),
+            "derivatives_liquidations_long_usd": np.full(rows, 50000.0),
+        }
+    )
+    without_positioning = _component_scores(_add_market_indicators(base))
+
+    with_positioning = _add_market_indicators(base.copy())
+    with_positioning["derivatives_basis"] = 0.001
+    with_positioning["derivatives_taker_buy_sell_ratio"] = 0.95
+    with_positioning["derivatives_long_short_ratio"] = 0.9
+    with_positioning["derivatives_leverage_ratio"] = np.r_[np.full(rows - 10, 1.2), np.linspace(1.2, 0.7, 10)]
+    positioned_scores = _component_scores(with_positioning)
+
+    assert positioned_scores["derivatives"].iloc[-1] != without_positioning["derivatives"].iloc[-1]
+
+
+def test_derivatives_audit_output(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    rows = 150
+    dates = pd.date_range("2024-01-01", periods=rows, freq="D")
+    close = np.linspace(40000.0, 42000.0, rows)
+    feature_df = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "funding_rate_mean": np.full(rows, 0.0001),
+            "derivatives_open_interest": np.linspace(10000, 9000, rows),
+            "derivatives_liquidations_long_usd": np.full(rows, 50000.0),
+            "derivatives_basis": np.full(rows, 0.001),
+            "derivatives_taker_buy_sell_ratio": np.full(rows, 1.0),
+            "derivatives_long_short_ratio": np.full(rows, 1.1),
+            "derivatives_leverage_ratio": np.full(rows, 0.8),
+        }
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("egx_research.crypto_bottom.load_crypto_feature_data", lambda c: feature_df)
+
+    run = run_crypto_bottom_score(config, "config/crypto_btc.yaml", run_id="futures-audit")
+    audit_file = Path(run.run_dir) / "bottom_derivatives_audit.csv"
+    component_file = Path(run.run_dir) / "bottom_component_scores.csv"
+
+    audit_df = pd.read_csv(audit_file)
+    component_df = pd.read_csv(component_file)
+    for column in [
+        "sub_derivatives_spot_led_bounce",
+        "sub_derivatives_leverage_reset",
+        "sub_derivatives_overheated_long_short_penalty",
+    ]:
+        assert column in audit_df.columns
+        assert column in component_df.columns
