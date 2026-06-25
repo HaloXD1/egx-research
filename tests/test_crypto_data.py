@@ -247,7 +247,7 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
     df = fetch_deribit_options(config)
     assert not df.empty
-    assert list(df.columns) == ["date", "options_skew", "put_call_ratio", "dvol"]
+    assert {"date", "options_skew", "put_call_ratio", "dvol"}.issubset(df.columns)
     assert df.iloc[0]["date"] == today.tz_convert(None)
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
@@ -460,3 +460,33 @@ def test_fetch_liquidations_uses_local_fallback_without_key(tmp_path, monkeypatc
     frame = fetch_liquidations(config)
     assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
     assert frame.iloc[0]["long_liq_usd"] == 1000.0
+
+
+def test_fetch_deribit_options_historical_api(monkeypatch) -> None:
+    config = CryptoConfig()
+    monkeypatch.setenv("DERIBIT_API_KEY", "test-key")
+
+    def mock_get_json(url, params=None, headers=None):
+        assert headers == {"Authorization": "Bearer test-key"}
+        return {
+            "result": [
+                {
+                    "timestamp": 1704067200000,
+                    "skew": 0.12,
+                    "put_call_ratio": 1.4,
+                    "dvol": 55.0,
+                    "options_25d_skew": 0.10,
+                    "options_put_call_oi": 1.5,
+                    "options_put_call_volume": 1.3,
+                    "options_iv_30d": 0.72,
+                    "options_term_structure": 1.08,
+                    "options_dvol": 55.0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    df = fetch_deribit_options(config)
+    assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert df.iloc[0]["options_25d_skew"] == 0.10
+    assert df.iloc[0]["options_put_call_oi"] == 1.5
