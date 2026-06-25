@@ -70,6 +70,7 @@ _SIGNAL_COLUMNS = [
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
+    "etf_flow_ibit", "etf_flow_fbtc", "etf_flow_arkb", "etf_flow_bitb", "etf_flow_gbtc",
 ]
 
 _SIGNAL_ALIASES = {
@@ -211,6 +212,52 @@ def _add_market_indicators(data: pd.DataFrame) -> pd.DataFrame:
         low_offset = int(np.nanargmin(window))
         days_since.append(index - (start + low_offset))
     frame["days_since_30d_low"] = days_since
+
+    # ETF flow indicators
+    etf_ibit = _optional_column(frame, "etf_flow_ibit")
+    etf_fbtc = _optional_column(frame, "etf_flow_fbtc")
+    etf_arkb = _optional_column(frame, "etf_flow_arkb")
+    etf_bitb = _optional_column(frame, "etf_flow_bitb")
+    etf_gbtc = _optional_column(frame, "etf_flow_gbtc")
+    etf_total = _optional_column(frame, "etf_net_flow_usd")
+
+    etf_ibit_filled = etf_ibit.fillna(0.0)
+    etf_fbtc_filled = etf_fbtc.fillna(0.0)
+    etf_arkb_filled = etf_arkb.fillna(0.0)
+    etf_bitb_filled = etf_bitb.fillna(0.0)
+    etf_gbtc_filled = etf_gbtc.fillna(0.0)
+    etf_total_filled = etf_total.fillna(0.0)
+
+    frame["etf_flow_5d_sum"] = etf_total_filled.rolling(5, min_periods=1).sum()
+    frame["etf_flow_20d_sum"] = etf_total_filled.rolling(20, min_periods=1).sum()
+    frame["etf_flow_acceleration"] = frame["etf_flow_5d_sum"] - frame["etf_flow_20d_sum"] / 4.0
+
+    # Flow pct of BTC market cap
+    sply = _optional_column(frame, "SplyCur").ffill().fillna(19.5e6)
+    mcap = frame["close"] * sply
+    frame["etf_flow_pct_mcap_5d"] = frame["etf_flow_5d_sum"] / mcap.replace(0, np.nan)
+
+    # ex-GBTC flows
+    ex_gbtc_flow = etf_total - etf_gbtc
+    ex_gbtc_flow_filled = ex_gbtc_flow.fillna(0.0)
+    frame["etf_ex_gbtc_flow_5d_sum"] = ex_gbtc_flow_filled.rolling(5, min_periods=1).sum()
+    frame["etf_ex_gbtc_flow_20d_sum"] = ex_gbtc_flow_filled.rolling(20, min_periods=1).sum()
+
+    # ex-GBTC persistence: fraction of trading days in the last 20 calendar days where ex_gbtc_flow > 0
+    pos_ex_gbtc_days = (ex_gbtc_flow > 0).rolling(20, min_periods=1).sum().fillna(0.0)
+    trade_days = (ex_gbtc_flow.notna() & (ex_gbtc_flow != 0)).rolling(20, min_periods=1).sum().fillna(0.0)
+    frame["etf_ex_gbtc_persistence_20d"] = (pos_ex_gbtc_days / trade_days.replace(0, np.nan)).fillna(0.0)
+
+    # Issuer breadth: non-GBTC major issuers with positive flows
+    breadth = (
+        (etf_ibit > 0).astype(int) +
+        (etf_fbtc > 0).astype(int) +
+        (etf_arkb > 0).astype(int) +
+        (etf_bitb > 0).astype(int)
+    )
+    frame["etf_issuer_breadth"] = breadth / 4.0
+    frame["etf_issuer_breadth_5d"] = frame["etf_issuer_breadth"].rolling(5, min_periods=1).mean().fillna(0.0)
+
     return frame
 
 
@@ -285,11 +332,23 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     spot_signals: list[pd.Series] = []
     etf_flow = _optional_column(frame, "etf_net_flow_usd").fillna(_optional_column(frame, "etf_net_flow_btc") * frame["close"])
     if etf_flow.notna().sum() > 30:
-        # Forward-fill over weekends/gaps (max 3 days) so rolling windows stay valid
-        etf_filled = etf_flow.ffill(limit=3)
-        etf_5d = etf_filled.rolling(5, min_periods=3).sum()
-        etf_20d_abs = etf_filled.abs().rolling(20, min_periods=5).sum()
-        spot_signals.append(_scale_between(etf_5d / etf_20d_abs.replace(0, np.nan), -0.05, 0.35))
+        etf_5d = frame["etf_flow_5d_sum"]
+        etf_20d_abs = etf_flow.abs().fillna(0.0).rolling(20, min_periods=5).sum()
+        total_flow_ratio = etf_5d / etf_20d_abs.replace(0, np.nan)
+        total_flow_score = _scale_between(total_flow_ratio, -0.05, 0.35).fillna(0.5)
+
+        ex_gbtc_5d = frame["etf_ex_gbtc_flow_5d_sum"]
+        gbtc_flow = _optional_column(frame, "etf_flow_gbtc")
+        ex_gbtc_flow = etf_flow - gbtc_flow
+        ex_gbtc_20d_abs = ex_gbtc_flow.abs().fillna(0.0).rolling(20, min_periods=5).sum()
+        ex_gbtc_flow_ratio = ex_gbtc_5d / ex_gbtc_20d_abs.replace(0, np.nan)
+        ex_gbtc_flow_score = _scale_between(ex_gbtc_flow_ratio, -0.05, 0.35).fillna(0.5)
+
+        persistence = frame["etf_ex_gbtc_persistence_20d"]
+        breadth_5d = frame["etf_issuer_breadth_5d"]
+
+        etf_score = 0.4 * total_flow_score + 0.6 * (ex_gbtc_flow_score * (0.3 + 0.7 * (0.5 * persistence + 0.5 * breadth_5d)))
+        spot_signals.append(etf_score)
     coinbase_premium = _optional_column(frame, "spot_coinbase_premium")
     if coinbase_premium.notna().sum() > 30:
         spot_signals.append(_scale_between(coinbase_premium, -0.002, 0.006))
