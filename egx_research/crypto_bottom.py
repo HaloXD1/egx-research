@@ -634,6 +634,122 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _weekly_rsi_from_daily(frame: pd.DataFrame) -> pd.Series:
+    weekly = (
+        frame[["date", "close"]]
+        .assign(date=lambda data: pd.to_datetime(data["date"]))
+        .set_index("date")["close"]
+        .resample("W-SUN")
+        .last()
+    )
+    weekly_rsi = rsi(weekly, 14)
+    return weekly_rsi.reindex(pd.to_datetime(frame["date"]), method="ffill").reset_index(drop=True)
+
+
+def _confirmation_audit(frame: pd.DataFrame) -> pd.DataFrame:
+    weekly_rsi14 = _weekly_rsi_from_daily(frame)
+    higher_low = frame["rolling_low_21"] > frame["rolling_low_21"].shift(10)
+    funding = _optional_column(frame, "funding_rate_mean")
+    funding_normalized = (funding.abs() <= 0.0005) & (funding >= funding.rolling(14, min_periods=5).min())
+    sth_reclaim = (frame["close"] > frame["sth_realized_price"]) | (frame["sth_mvrv"] >= 0.98)
+    above_sma20 = frame["close"] > frame["sma20"]
+    above_sma50 = frame["close"] > frame["sma50"]
+    weekly_rsi_reclaim = (weekly_rsi14 >= 40.0) & (weekly_rsi14 > weekly_rsi14.shift(1))
+
+    confirmations = pd.concat(
+        [
+            above_sma20.astype(float),
+            above_sma50.astype(float),
+            higher_low.astype(float),
+            weekly_rsi_reclaim.astype(float),
+            sth_reclaim.astype(float),
+            funding_normalized.astype(float),
+        ],
+        axis=1,
+    ).sum(axis=1)
+    state = np.full(len(frame), "none", dtype=object)
+    state[confirmations >= 1] = "early"
+    state[confirmations >= 3] = "confirmed"
+    state[(above_sma20 & above_sma50 & higher_low & weekly_rsi_reclaim).fillna(False).to_numpy()] = "trend_reclaim"
+    return pd.DataFrame(
+        {
+            "date": frame["date"],
+            "close_above_sma20": above_sma20.astype(float),
+            "close_above_sma50": above_sma50.astype(float),
+            "higher_low_confirmed": higher_low.astype(float),
+            "weekly_rsi14": weekly_rsi14,
+            "weekly_rsi_reclaim": weekly_rsi_reclaim.astype(float),
+            "sth_reclaim": sth_reclaim.astype(float),
+            "funding_normalized": funding_normalized.astype(float),
+            "confirmation_count": confirmations,
+            "confirmation_state": state,
+        }
+    )
+
+
+def _cycle_phase_audit(frame: pd.DataFrame) -> pd.DataFrame:
+    date = pd.to_datetime(frame["date"])
+    halvings = [pd.Timestamp("2012-11-28"), pd.Timestamp("2016-07-09"), pd.Timestamp("2020-05-11"), pd.Timestamp("2024-04-19")]
+    days_since_halving = pd.Series(np.nan, index=frame.index, dtype=float)
+    for halving in halvings:
+        days = (date - halving).dt.days
+        days_since_halving = days_since_halving.where(days < 0, days)
+    sma200w = frame["close"].rolling(1400, min_periods=700).mean()
+    distance_200w = frame["close"] / sma200w.replace(0, np.nan) - 1.0
+    mvrv = _optional_column(frame, "CapMVRVCur").fillna(frame["sth_mvrv"])
+    stable_supply = _optional_column(frame, "liquidity_stablecoin_supply")
+    liquidity_trend = stable_supply.pct_change(90)
+    prior_ath = frame["close"].expanding(min_periods=30).max().shift(1)
+    prior_ath_reclaim = frame["close"] >= prior_ath
+
+    phase = np.full(len(frame), "mid_cycle", dtype=object)
+    deep_bear = (frame["drawdown_365"] <= -0.55) & (frame["close"] < frame["sma200"]) & (mvrv < 1.15)
+    late_bear = (frame["drawdown_365"] <= -0.35) & ((mvrv < 1.35) | (distance_200w < 0.35))
+    early_recovery = (frame["close"] > frame["sma50"]) & (frame["drawdown_365"] <= -0.15) & (mvrv < 2.2)
+    overheated = (mvrv > 3.5) | (frame["drawdown_365"] > -0.05) | prior_ath_reclaim.fillna(False)
+    phase[late_bear.fillna(False).to_numpy()] = "late_bear"
+    phase[deep_bear.fillna(False).to_numpy()] = "deep_bear"
+    phase[early_recovery.fillna(False).to_numpy()] = "early_recovery"
+    phase[overheated.fillna(False).to_numpy()] = "overheated"
+
+    return pd.DataFrame(
+        {
+            "date": frame["date"],
+            "days_since_halving": days_since_halving,
+            "distance_200w_ma": distance_200w,
+            "cycle_mvrv": mvrv,
+            "liquidity_trend_90d": liquidity_trend,
+            "prior_ath_reclaim": prior_ath_reclaim.astype(float),
+            "cycle_phase": phase,
+        }
+    )
+
+
+def _future_quality_labels(
+    frame: pd.DataFrame,
+    horizon: int,
+    tolerance: float,
+    max_drawdown: float,
+) -> pd.DataFrame:
+    hold = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
+    rows = []
+    for idx in frame.index:
+        fwd_return, fwd_drawdown = _future_return_drawdown(frame, int(idx), horizon)
+        if fwd_return is None or fwd_drawdown is None or pd.isna(hold.loc[idx]):
+            rows.append((np.nan, np.nan, np.nan, np.nan))
+            continue
+        dd_penalty = float(_clip01((abs(min(0.0, fwd_drawdown)) - max_drawdown) / max_drawdown))
+        return_ok = fwd_return >= -0.05
+        quality = float(bool(hold.loc[idx]) and fwd_drawdown >= -max_drawdown and return_ok)
+        risk_adjusted = float(_clip01(0.65 * hold.loc[idx] + 0.20 * max(0.0, fwd_return) - 0.55 * dd_penalty))
+        rows.append((quality, dd_penalty, risk_adjusted, fwd_return))
+    return pd.DataFrame(
+        rows,
+        columns=["quality_outcome", "forward_drawdown_penalty", "risk_adjusted_bottom_score", "forward_return_for_quality"],
+        index=frame.index,
+    )
+
+
 def _future_success_labels(frame: pd.DataFrame, horizon: int, tolerance: float, anchor_lookback: int = 21) -> pd.Series:
     lows = frame["low"].to_numpy(dtype=float)
     labels = np.full(len(frame), np.nan, dtype=float)
@@ -946,6 +1062,109 @@ def _recommendation_engine(confidence: float, bottom_type: str, regime: str, lat
     }
 
 
+def _washout_evidence(frame: pd.DataFrame, idx: int) -> dict[str, Any]:
+    window = slice(max(0, idx - 2), idx + 1)
+    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
+    spike = 0.0
+    if long_liq.notna().any():
+        spike_series = long_liq / long_liq.rolling(30, min_periods=10).mean()
+        spike = float(spike_series.iloc[window].max(skipna=True))
+        if not np.isfinite(spike):
+            spike = 0.0
+    realized_loss = frame["realized_loss_ratio"] if "realized_loss_ratio" in frame.columns else pd.Series(np.nan, index=frame.index)
+    realized_loss_climax = bool(realized_loss.iloc[window].max(skipna=True) >= 2.5) if realized_loss.notna().any() else False
+    sth_capitulation = bool(float(frame.iloc[idx].get("sth_mvrv", np.nan)) <= 0.98)
+    volume_climax = bool(float(frame.iloc[idx].get("volume_ratio_20", 0.0)) >= 1.8)
+    vol_flush = bool(float(frame.iloc[idx].get("vol30", 0.0)) >= 0.8)
+    detected = bool(spike >= 3.0 or realized_loss_climax or sth_capitulation or volume_climax or vol_flush)
+    return {
+        "washout_detected": detected,
+        "recent_liquidation_spike": spike,
+        "realized_loss_climax": realized_loss_climax,
+        "sth_mvrv_capitulation": sth_capitulation,
+        "volume_climax": volume_climax,
+        "volatility_flush": vol_flush,
+    }
+
+
+def _false_bottom_penalty(
+    latest: pd.Series,
+    components: pd.DataFrame,
+    latest_idx: int,
+    confirmation_state: str,
+    cycle_phase: str,
+    washout: dict[str, Any],
+    enabled: bool,
+) -> dict[str, Any]:
+    if not enabled:
+        return {"factor": 1.0, "reasons": [], "below_sma200": False, "macro_weak": False, "washout_detected": washout["washout_detected"]}
+    close = float(latest["close"])
+    sma200 = float(latest.get("sma200", np.nan))
+    below_sma200 = bool(np.isfinite(sma200) and close < sma200)
+    macro_score = float(components.loc[latest_idx, "macro"]) if "macro" in components.columns and pd.notna(components.loc[latest_idx, "macro"]) else 0.5
+    macro_weak = macro_score < 0.40
+    confirmed = confirmation_state in {"confirmed", "trend_reclaim"}
+    factor = 1.0
+    reasons: list[str] = []
+    if below_sma200 and macro_weak and not washout["washout_detected"]:
+        factor *= 0.82
+        reasons.append("below_sma200_weak_macro_no_washout")
+    if cycle_phase == "deep_bear" and not confirmed:
+        factor *= 0.90
+        reasons.append("deep_bear_without_confirmation")
+    return {
+        "factor": float(_clip01(factor)),
+        "reasons": reasons,
+        "below_sma200": below_sma200,
+        "macro_weak": macro_weak,
+        "macro_score": macro_score,
+        "washout_detected": washout["washout_detected"],
+    }
+
+
+def _tranche_engine(
+    confidence: float,
+    confirmation_state: str,
+    cycle_phase: str,
+    levels: dict[str, float],
+    require_confirmation: bool,
+) -> dict[str, Any]:
+    band = _confidence_band(confidence)
+    eligible = 0
+    reason = "confidence below medium"
+    if band in {"medium", "high", "very_high", "extreme"}:
+        eligible = 20
+        reason = "medium setup permits probe"
+    if eligible >= 20 and (not require_confirmation or confirmation_state in {"confirmed", "trend_reclaim"}):
+        eligible = 50
+        reason = "confirmation unlocks first add"
+    if confirmation_state == "trend_reclaim" and band in {"high", "very_high", "extreme"}:
+        eligible = 80
+        reason = "trend reclaim unlocks second add"
+    if cycle_phase == "deep_bear" and confirmation_state not in {"confirmed", "trend_reclaim"}:
+        eligible = min(eligible, 20)
+        reason = "deep bear keeps sizing capped before confirmation"
+    reserve = max(0, 100 - eligible)
+    next_locked = "reserve for undercut/retest" if eligible >= 80 else "needs confirmation or trend reclaim"
+    return {
+        "policy": "20/30/30/20",
+        "eligible_allocation_pct": eligible,
+        "reserve_allocation_pct": reserve,
+        "current_tranche": reason,
+        "next_tranche_locked_reason": next_locked,
+        "confirmation_state": confirmation_state,
+        "cycle_phase": cycle_phase,
+        "invalidation_level": levels.get("invalidation_low"),
+        "confirmation_level": levels.get("prior_20d_high"),
+        "tranches": [
+            {"name": "probe", "allocation_pct": 20, "unlocked": eligible >= 20},
+            {"name": "confirmation_add", "allocation_pct": 30, "unlocked": eligible >= 50},
+            {"name": "trend_reclaim_add", "allocation_pct": 30, "unlocked": eligible >= 80},
+            {"name": "undercut_retest_reserve", "allocation_pct": 20, "unlocked": False},
+        ],
+    }
+
+
 def _driver_attribution(components: pd.DataFrame, latest_idx: int, weights: dict[str, float], data_quality: dict[str, Any]) -> dict[str, Any]:
     rows = []
     for component, weight in weights.items():
@@ -978,8 +1197,16 @@ def _driver_attribution(components: pd.DataFrame, latest_idx: int, weights: dict
     }
 
 
-def _walk_forward_validation(frame: pd.DataFrame, components: pd.DataFrame, horizon: int, tolerance: float, step_days: int = 63) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _walk_forward_validation(
+    frame: pd.DataFrame,
+    components: pd.DataFrame,
+    horizon: int,
+    tolerance: float,
+    step_days: int = 63,
+    max_drawdown: float = 0.15,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
     labels = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
+    quality = _future_quality_labels(frame, horizon=horizon, tolerance=tolerance, max_drawdown=max_drawdown)
     rows = []
     start = min(max(500, horizon * 4), max(0, len(frame) - horizon - 1))
     for idx in range(start, len(frame) - horizon - 1, step_days):
@@ -1000,6 +1227,7 @@ def _walk_forward_validation(frame: pd.DataFrame, components: pd.DataFrame, hori
         )
         outcome = labels.iloc[idx]
         fwd_return, fwd_drawdown = _future_return_drawdown(frame, idx, horizon)
+        quality_outcome = quality.loc[idx, "quality_outcome"]
         rows.append(
             {
                 "date": str(pd.Timestamp(frame.iloc[idx]["date"]).date()),
@@ -1008,8 +1236,11 @@ def _walk_forward_validation(frame: pd.DataFrame, components: pd.DataFrame, hori
                 "regime": str(frame.iloc[idx]["primary_regime"]),
                 "confidence": prob,
                 "outcome": int(outcome) if pd.notna(outcome) else np.nan,
+                "quality_outcome": int(quality_outcome) if pd.notna(quality_outcome) else np.nan,
                 "forward_return": fwd_return,
                 "forward_drawdown": fwd_drawdown,
+                "forward_drawdown_penalty": quality.loc[idx, "forward_drawdown_penalty"],
+                "risk_adjusted_bottom_score": quality.loc[idx, "risk_adjusted_bottom_score"],
                 "training_rows": int(mask.sum()),
                 "regime_training_rows": regime_rows,
                 "regime_shrinkage": shrink,
@@ -1022,7 +1253,15 @@ def _walk_forward_validation(frame: pd.DataFrame, components: pd.DataFrame, hori
     valid = validation.dropna(subset=["outcome", "confidence"])
     brier = float(((valid["confidence"] - valid["outcome"]) ** 2).mean()) if not valid.empty else None
     calibration_error = float(abs(valid["confidence"].mean() - valid["outcome"].mean())) if not valid.empty else None
-    summary = {"rows": int(len(valid)), "brier_score": brier, "calibration_error": calibration_error}
+    quality_valid = validation.dropna(subset=["quality_outcome"]) if "quality_outcome" in validation.columns else pd.DataFrame()
+    summary = {
+        "rows": int(len(valid)),
+        "brier_score": brier,
+        "calibration_error": calibration_error,
+        "quality_hitrate": float(quality_valid["quality_outcome"].mean()) if not quality_valid.empty else None,
+        "avg_forward_drawdown_penalty": float(validation["forward_drawdown_penalty"].mean()) if "forward_drawdown_penalty" in validation else None,
+        "avg_risk_adjusted_bottom_score": float(validation["risk_adjusted_bottom_score"].mean()) if "risk_adjusted_bottom_score" in validation else None,
+    }
     return validation, summary
 
 
@@ -1046,8 +1285,10 @@ def _confidence_bucket_summary(validation: pd.DataFrame) -> list[dict[str, Any]]
                 "confidence_max": min(high, 1.0),
                 "sample_size": int(len(subset)),
                 "observed_hitrate": float(subset["outcome"].mean()) if len(subset) else None,
+                "quality_hitrate": float(subset["quality_outcome"].mean()) if len(subset) and "quality_outcome" in subset else None,
                 "avg_forward_drawdown": float(subset["forward_drawdown"].mean()) if len(subset) and subset["forward_drawdown"].notna().any() else None,
                 "avg_forward_return": float(subset["forward_return"].mean()) if len(subset) and subset["forward_return"].notna().any() else None,
+                "avg_risk_adjusted_bottom_score": float(subset["risk_adjusted_bottom_score"].mean()) if len(subset) and "risk_adjusted_bottom_score" in subset else None,
                 "is_sparse": bool(len(subset) < 5),
             }
         )
@@ -1108,6 +1349,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
     bucket_rows = []
     for row in summary.get("confidence_buckets", []):
         hitrate = _format_pct(row["observed_hitrate"]) if row.get("observed_hitrate") is not None else "n/a"
+        quality_hitrate = _format_pct(row["quality_hitrate"]) if row.get("quality_hitrate") is not None else "n/a"
         fwd_dd = _format_pct(row["avg_forward_drawdown"]) if row.get("avg_forward_drawdown") is not None else "n/a"
         fwd_ret = _format_pct(row["avg_forward_return"]) if row.get("avg_forward_return") is not None else "n/a"
         sparse = "yes" if row.get("is_sparse") else "no"
@@ -1116,6 +1358,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
             f"<td>{html.escape(row['bucket'])}</td>"
             f"<td>{row['sample_size']}</td>"
             f"<td>{hitrate}</td>"
+            f"<td>{quality_hitrate}</td>"
             f"<td>{fwd_dd}</td>"
             f"<td>{fwd_ret}</td>"
             f"<td>{sparse}</td>"
@@ -1134,6 +1377,18 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
     recommendation_details = summary.get("recommendation_details", {})
     bottom_type = summary.get("bottom_type", {})
     validation_summary = summary.get("walk_forward_validation", {})
+    confirmation = summary.get("confirmation", {})
+    false_penalty = summary.get("false_bottom_penalty", {})
+    tranche_plan = summary.get("tranche_plan", {})
+    penalty_reasons = ", ".join(false_penalty.get("reasons", [])) or "none"
+    tranche_rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(row.get('name', '')))}</td>"
+        f"<td>{row.get('allocation_pct', 0)}%</td>"
+        f"<td>{'yes' if row.get('unlocked') else 'no'}</td>"
+        "</tr>"
+        for row in tranche_plan.get("tranches", [])
+    )
     
     dq = summary.get("data_quality", {})
     dq_warnings_html = ""
@@ -1192,10 +1447,11 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <h1>BTC Bottom Confidence Report</h1>
   <h2>Executive Summary</h2>
   <div class="summary">
-    <p><strong>Current read:</strong> {best['confidence_pct']:.1f}% confidence that the recent BTC low holds over {best['horizon_days']} days with a {best['tolerance_pct']:.0f}% allowed breach. Band: <strong>{html.escape(best['confidence_band'])}</strong>.</p>
+    <p><strong>Current read:</strong> {best['adjusted_confidence_pct']:.1f}% adjusted quality confidence that the recent BTC low holds over {best['horizon_days']} days with a {best['tolerance_pct']:.0f}% allowed breach. Band: <strong>{html.escape(best['adjusted_confidence_band'])}</strong>.</p>
     <p><strong>Recommendation:</strong> {html.escape(summary['recommendation'])}</p>
     <p><strong>Action:</strong> {html.escape(str(recommendation_details.get('action', 'n/a')))} | <strong>Sizing:</strong> {html.escape(str(recommendation_details.get('sizing_guidance', 'n/a')))}</p>
     <p><strong>Regime:</strong> {html.escape(str(summary.get('regime', {}).get('primary', 'n/a')))} | <strong>Bottom type:</strong> {html.escape(str(bottom_type.get('primary', 'n/a')))}</p>
+    <p><strong>Confirmation:</strong> {html.escape(str(confirmation.get('confirmation_state', 'n/a')))} | <strong>Cycle phase:</strong> {html.escape(str(summary.get('cycle_phase', 'n/a')))}</p>
     <p><strong>Liquidation Driver:</strong> {html.escape(summary.get('washout_driver_text', ''))}</p>
     <p><strong>Important:</strong> this is a historical probability score, not a guarantee that BTC cannot print a lower wick.</p>
   </div>
@@ -1242,8 +1498,17 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <h2>Regime, Bottom Type, And Recommendation</h2>
   <p><strong>Primary regime:</strong> {html.escape(str(summary.get('regime', {}).get('primary', 'n/a')))} ({html.escape(str(summary.get('regime', {}).get('tags', '')))}).</p>
   <p><strong>Bottom type:</strong> {html.escape(str(bottom_type.get('primary', 'n/a')))}. This augments the horizon/tolerance confidence and does not replace it.</p>
+  <p><strong>False-bottom penalty factor:</strong> {false_penalty.get('factor', 1.0):.2f}. <strong>Reasons:</strong> {html.escape(penalty_reasons)}.</p>
   <p><strong>Action:</strong> {html.escape(str(recommendation_details.get('action', 'n/a')))}. <strong>Sizing guidance:</strong> {html.escape(str(recommendation_details.get('sizing_guidance', 'n/a')))}.</p>
   <p><strong>Confirmation:</strong> ${_format_num(recommendation_details.get('confirmation_level', np.nan))}. <strong>Invalidation:</strong> ${_format_num(recommendation_details.get('invalidation_level', np.nan))}.</p>
+
+  <h2>Confirmation And Tranche Plan</h2>
+  <p><strong>State:</strong> {html.escape(str(confirmation.get('confirmation_state', 'n/a')))}. <strong>Eligible allocation:</strong> {tranche_plan.get('eligible_allocation_pct', 0)}%. <strong>Reserve:</strong> {tranche_plan.get('reserve_allocation_pct', 0)}%.</p>
+  <p><strong>Current tranche:</strong> {html.escape(str(tranche_plan.get('current_tranche', 'n/a')))}. <strong>Next locked because:</strong> {html.escape(str(tranche_plan.get('next_tranche_locked_reason', 'n/a')))}.</p>
+  <table>
+    <thead><tr><th>Tranche</th><th>Allocation</th><th>Unlocked</th></tr></thead>
+    <tbody>{tranche_rows}</tbody>
+  </table>
 
   <h2>Confidence Grid</h2>
   <p>Use the 5% tolerance rows as the stricter clean-bottom view and 10% rows as the tactical bottom-zone view.</p>
@@ -1252,7 +1517,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <h2>Walk-Forward Reliability</h2>
   <p>Brier score: {validation_summary.get('brier_score', 'n/a')}. Calibration error: {validation_summary.get('calibration_error', 'n/a')}. Sparse buckets are flagged and should not be overclaimed.</p>
   <table>
-    <thead><tr><th>Bucket</th><th>Samples</th><th>Observed hitrate</th><th>Avg forward drawdown</th><th>Avg forward return</th><th>Sparse</th></tr></thead>
+    <thead><tr><th>Bucket</th><th>Samples</th><th>Observed hitrate</th><th>Quality hitrate</th><th>Avg forward drawdown</th><th>Avg forward return</th><th>Sparse</th></tr></thead>
     <tbody>{bucket_html}</tbody>
   </table>
 
@@ -1315,7 +1580,11 @@ def run_crypto_bottom_score(
     latest = frame.loc[latest_idx]
     current_regime = str(latest["primary_regime"])
     data_quality = run_data_quality_checks(config, frame, as_of)
-
+    quality_config = config.bottom_quality
+    confirmation_audit = _confirmation_audit(frame)
+    cycle_phase_audit = _cycle_phase_audit(frame) if quality_config.cycle_phase_enabled else pd.DataFrame({"date": frame["date"], "cycle_phase": "mid_cycle"})
+    latest_confirmation = confirmation_audit.loc[latest_idx].to_dict()
+    latest_cycle_phase = str(cycle_phase_audit.loc[latest_idx, "cycle_phase"])
 
     # Heatmap downside penalty calculation
     close_val = float(latest["close"])
@@ -1328,6 +1597,7 @@ def run_crypto_bottom_score(
         distance_pct = (close_val - down_liq) / close_val
         if 0 < distance_pct < 0.03:
             penalty_factor = 1.0 - 0.15 * (1.0 - distance_pct / 0.03)
+    heatmap_penalty_factor = penalty_factor
 
     # Liquidation washout check
     long_liq_series = _optional_column(frame, "derivatives_liquidations_long_usd")
@@ -1357,6 +1627,20 @@ def run_crypto_bottom_score(
         washout_text = f"Washout detected (recent spike: {recent_spike:.1f}x, imbalance: {recent_imbalance:.1%}). Recent leverage flush cleared out buyers, supporting bottom formation."
     else:
         washout_text = "No washout: lack of severe liquidation spikes suggests leverage is still building or calm."
+    washout_evidence = _washout_evidence(frame, latest_idx)
+    if washout_detected:
+        washout_evidence["washout_detected"] = True
+    false_bottom_penalty = _false_bottom_penalty(
+        latest,
+        components,
+        latest_idx,
+        str(latest_confirmation["confirmation_state"]),
+        latest_cycle_phase,
+        washout_evidence,
+        quality_config.false_bottom_penalty_enabled,
+    )
+    penalty_factor *= float(false_bottom_penalty["factor"])
+    combined_penalty_factor = penalty_factor
 
     run_name = run_id or f"crypto-bottom-score-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / run_name)
@@ -1366,12 +1650,24 @@ def run_crypto_bottom_score(
     coef_payload: dict[str, Any] = {}
     latest_scores = {}
     best_row: dict[str, Any] | None = None
+    primary_row: dict[str, Any] | None = None
     strict_probability = 0.0
     strict_adjusted_probability = 0.0
 
     for horizon in HORIZONS:
         for tolerance in TOLERANCES:
-            labels = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
+            hold_labels = _future_success_labels(frame, horizon=horizon, tolerance=tolerance)
+            quality_labels = _future_quality_labels(
+                frame,
+                horizon=horizon,
+                tolerance=tolerance,
+                max_drawdown=quality_config.max_forward_drawdown,
+            )
+            is_primary_quality = (
+                horizon == quality_config.primary_horizon_days
+                and abs(tolerance - quality_config.primary_tolerance) < 1e-9
+            )
+            labels = quality_labels["quality_outcome"] if is_primary_quality else hold_labels
             mask = _train_mask(frame, labels, latest_idx)
             weights, hitrates, global_base_rate = _learn_component_weights(components, labels, mask)
             base_rate = global_base_rate
@@ -1415,6 +1711,10 @@ def run_crypto_bottom_score(
                 "adjusted_confidence_band": _confidence_band(adjusted_confidence),
                 "weighted_signal_score": latest_score,
                 "calibration_method": calibration_method,
+                "quality_calibrated": is_primary_quality,
+                "latest_quality_outcome": quality_labels.loc[latest_idx, "quality_outcome"],
+                "latest_forward_drawdown_penalty": quality_labels.loc[latest_idx, "forward_drawdown_penalty"],
+                "latest_risk_adjusted_bottom_score": quality_labels.loc[latest_idx, "risk_adjusted_bottom_score"],
             }
             grid_rows.append(row)
             hitrates = hitrates.copy()
@@ -1432,8 +1732,11 @@ def run_crypto_bottom_score(
                 best_row["tolerance"],
             ):
                 best_row = row
+            if is_primary_quality:
+                primary_row = row
 
     assert best_row is not None
+    best_row = primary_row or best_row
     grid = pd.DataFrame(grid_rows).sort_values(["horizon_days", "tolerance"]).reset_index(drop=True)
     hitrates_all = pd.concat(hitrate_frames, ignore_index=True) if hitrate_frames else pd.DataFrame()
     best_key = f"{best_row['horizon_days']}d_{int(best_row['tolerance'] * 100)}pct"
@@ -1449,6 +1752,16 @@ def run_crypto_bottom_score(
         latest,
         levels,
     )
+    tranche_plan = _tranche_engine(
+        float(best_row["adjusted_confidence"]),
+        str(latest_confirmation["confirmation_state"]),
+        latest_cycle_phase,
+        levels,
+        quality_config.confirmation_required_for_adds,
+    )
+    recommendation_details["sizing_guidance"] = f"{tranche_plan['eligible_allocation_pct']}% eligible / {tranche_plan['reserve_allocation_pct']}% reserve"
+    recommendation_details["confirmation_state"] = str(latest_confirmation["confirmation_state"])
+    recommendation_details["cycle_phase"] = latest_cycle_phase
 
     component_snapshot = [
         {
@@ -1466,6 +1779,7 @@ def run_crypto_bottom_score(
         components,
         int(best_row["horizon_days"]),
         float(best_row["tolerance"]),
+        max_drawdown=quality_config.max_forward_drawdown,
     )
     confidence_buckets = _confidence_bucket_summary(validation)
 
@@ -1492,11 +1806,18 @@ def run_crypto_bottom_score(
         "best_case": best_row,
         "strict_60d_5pct_confidence": strict_probability,
         "strict_60d_5pct_adjusted_confidence": strict_adjusted_probability,
-        "heatmap_penalty_factor": penalty_factor,
+        "heatmap_penalty_factor": heatmap_penalty_factor,
+        "combined_penalty_factor": combined_penalty_factor,
+        "false_bottom_penalty": false_bottom_penalty,
         "washout_driver_text": washout_text,
+        "washout_evidence": washout_evidence,
         "recommendation": recommendation,
         "adjusted_recommendation": adjusted_recommendation,
         "recommendation_details": recommendation_details,
+        "confirmation": to_native(latest_confirmation),
+        "cycle_phase": latest_cycle_phase,
+        "tranche_plan": tranche_plan,
+        "bottom_quality_config": to_native(quality_config.__dict__),
         "bottom_type": bottom_type,
         "regime": {"primary": current_regime, "tags": str(latest["regime_tags"])},
         "levels": levels,
@@ -1522,6 +1843,8 @@ def run_crypto_bottom_score(
     derivatives_audit.insert(0, "date", frame["date"])
     derivatives_audit["derivatives_overall"] = components["derivatives"]
     derivatives_audit.to_csv(run_dir / "bottom_derivatives_audit.csv", index=False)
+    confirmation_audit.to_csv(run_dir / "bottom_confirmation_audit.csv", index=False)
+    cycle_phase_audit.to_csv(run_dir / "bottom_cycle_phase_audit.csv", index=False)
 
     type_audit_rows = []
     for idx in frame.index:
@@ -1553,6 +1876,21 @@ def run_crypto_bottom_score(
     write_json(run_dir / "bottom_model_coefficients.json", coef_payload)
     write_json(run_dir / "bottom_driver_attribution.json", to_native(driver_attribution))
     write_json(run_dir / "bottom_validation_summary.json", to_native({"summary": validation_summary, "confidence_buckets": confidence_buckets}))
+    write_json(
+        run_dir / "bottom_quality_summary.json",
+        to_native(
+            {
+                "bottom_quality_config": quality_config.__dict__,
+                "false_bottom_penalty": false_bottom_penalty,
+                "heatmap_penalty_factor": heatmap_penalty_factor,
+                "combined_penalty_factor": combined_penalty_factor,
+                "confirmation": latest_confirmation,
+                "cycle_phase": latest_cycle_phase,
+                "tranche_plan": tranche_plan,
+                "walk_forward_validation": validation_summary,
+            }
+        ),
+    )
     write_json(run_dir / "bottom_score_summary.json", to_native(summary))
     report_path = run_dir / "bottom_report.html"
     report_path.write_text(_report_html(summary, grid, components, hitrates_all), encoding="utf-8")
