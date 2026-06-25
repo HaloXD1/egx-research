@@ -70,6 +70,8 @@ _SIGNAL_COLUMNS = [
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
+    "onchain_sth_realized_price", "onchain_sth_mvrv", "onchain_sth_sopr",
+    "onchain_sopr", "onchain_realized_loss_usd", "onchain_realized_profit_usd",
 ]
 
 _SIGNAL_ALIASES = {
@@ -81,6 +83,12 @@ _SIGNAL_ALIASES = {
     "options_options_skew": "options_skew",
     "options_put_call_ratio": "put_call_ratio",
     "options_dvol": "dvol",
+    "onchain_sth_realized_price": "sth_realized_price",
+    "onchain_sth_mvrv": "sth_mvrv",
+    "onchain_sth_sopr": "sth_sopr",
+    "onchain_sopr": "sopr",
+    "onchain_realized_loss_usd": "realized_loss_usd",
+    "onchain_realized_profit_usd": "realized_profit_usd",
 }
 
 
@@ -106,6 +114,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
         "options_skew.csv": "options",
+        "glassnode_sth_sopr.csv": "onchain",
     }
     for filename, prefix in optional_files.items():
         source = _load_optional_source(raw_dir, filename)
@@ -195,10 +204,40 @@ def _add_market_indicators(data: pd.DataFrame) -> pd.DataFrame:
     pv = frame["close"] * frame["volume"]
     rolling_pv = pv.rolling(155, min_periods=30).sum()
     rolling_v = frame["volume"].rolling(155, min_periods=30).sum()
-    sth_realized_price = rolling_pv / rolling_v.replace(0, np.nan)
-    sth_realized_price = sth_realized_price.fillna(frame["close"])
-    frame["sth_realized_price"] = sth_realized_price
-    frame["sth_mvrv"] = frame["close"] / sth_realized_price
+    sth_realized_price_proxy = rolling_pv / rolling_v.replace(0, np.nan)
+    sth_realized_price_proxy = sth_realized_price_proxy.fillna(frame["close"])
+    frame["sth_realized_price_proxy"] = sth_realized_price_proxy
+    frame["sth_mvrv_proxy"] = frame["close"] / sth_realized_price_proxy
+
+    # Prefer real STH realized price, fall back to proxy
+    if "onchain_sth_realized_price" in frame.columns:
+        frame["sth_realized_price"] = _safe_numeric(frame["onchain_sth_realized_price"]).fillna(sth_realized_price_proxy)
+    else:
+        frame["sth_realized_price"] = sth_realized_price_proxy
+
+    # Prefer real STH MVRV, fall back to proxy, set audit label
+    if "onchain_sth_mvrv" in frame.columns:
+        real_mvrv = _safe_numeric(frame["onchain_sth_mvrv"])
+        frame["sth_mvrv"] = real_mvrv.fillna(frame["sth_mvrv_proxy"])
+        frame["sth_mvrv_source"] = np.where(real_mvrv.notna(), "real", "proxy")
+    else:
+        frame["sth_mvrv"] = frame["sth_mvrv_proxy"]
+        frame["sth_mvrv_source"] = "proxy"
+
+    # STH SOPR fallback cascade: real STH SOPR -> real overall SOPR -> missing
+    real_sth_sopr = _optional_column(frame, "onchain_sth_sopr")
+    real_sopr = _optional_column(frame, "onchain_sopr")
+    frame["sth_sopr"] = real_sth_sopr.fillna(real_sopr)
+    frame["sth_sopr_source"] = np.where(
+        real_sth_sopr.notna(),
+        "real_sth",
+        np.where(real_sopr.notna(), "real_sopr", "missing")
+    )
+
+    # Realized Loss Climax ratio (realized loss compared to 30d average)
+    realized_loss = _optional_column(frame, "onchain_realized_loss_usd")
+    frame["realized_loss_ratio"] = realized_loss / realized_loss.rolling(30, min_periods=10).mean().replace(0, np.nan)
+
 
     days_since = []
     lows = frame["low"].to_numpy(dtype=float)
@@ -251,7 +290,22 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     wick_reversal = (_scale_between(frame["down_wick_pct"], 0.01, 0.08) * _scale_between(frame["close_location"], 0.45, 0.85))
     vol_flush = _scale_between(frame["vol30"], 0.45, 1.10)
     post_flush = _scale_between(frame["vol_compression"], -0.10, 0.35)
-    out["capitulation"] = pd.concat([drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap], axis=1).mean(axis=1)
+    
+    cap_signals = [drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap]
+
+    # STH SOPR capitulation (only if sth_sopr has valid data)
+    sth_sopr = frame["sth_sopr"] if "sth_sopr" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_cap = 1.0 - _scale_between(sth_sopr, 0.94, 1.02)
+        cap_signals.append(sth_sopr_cap)
+
+    # Realized Loss Climax (only if realized_loss_ratio has valid data)
+    realized_loss_ratio = frame["realized_loss_ratio"] if "realized_loss_ratio" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if realized_loss_ratio.notna().any():
+        realized_loss_climax = _scale_between(realized_loss_ratio, 1.5, 6.0)
+        cap_signals.append(realized_loss_climax)
+
+    out["capitulation"] = pd.concat(cap_signals, axis=1).mean(axis=1)
 
     funding = _optional_column(frame, "funding_rate_mean")
     funding_reset = _scale_between(-funding, -0.0002, 0.0015)
@@ -280,7 +334,13 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     mvrv_zscore = (mcap - rcap) / mcap.expanding(min_periods=30).std().replace(0.0, np.nan)
     zscore_cheapness = 1.0 - _scale_between(mvrv_zscore, 0.1, 5.0)
 
-    out["onchain"] = pd.concat([mvrv_cheap, mvrv_recovery, exchange_outflow, active_recovery, tx_recovery, zscore_cheapness], axis=1).mean(axis=1)
+    sth_mvrv_reclaim = _scale_between(sth_mvrv, 0.98, 1.05)
+    onchain_signals = [mvrv_cheap, mvrv_recovery, exchange_outflow, active_recovery, tx_recovery, zscore_cheapness, sth_mvrv_reclaim]
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_reclaim = _scale_between(sth_sopr, 0.98, 1.04)
+        onchain_signals.append(sth_sopr_reclaim)
+
+    out["onchain"] = pd.concat(onchain_signals, axis=1).mean(axis=1)
 
     spot_signals: list[pd.Series] = []
     etf_flow = _optional_column(frame, "etf_net_flow_usd").fillna(_optional_column(frame, "etf_net_flow_btc") * frame["close"])

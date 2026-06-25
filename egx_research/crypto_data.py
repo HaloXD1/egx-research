@@ -42,6 +42,7 @@ OPTIONAL_FEATURE_PREFIXES = {
     "coinbase_premium.csv": "spot",
     "stablecoin_supply.csv": "liquidity",
     "options_skew.csv": "options",
+    "glassnode_sth_sopr.csv": "onchain",
 }
 
 OPTIONAL_CANONICAL_COLUMNS = {
@@ -49,6 +50,14 @@ OPTIONAL_CANONICAL_COLUMNS = {
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
     "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
+    "glassnode_sth_sopr.csv": {
+        "onchain_sth_realized_price",
+        "onchain_sth_mvrv",
+        "onchain_sth_sopr",
+        "onchain_sopr",
+        "onchain_realized_loss_usd",
+        "onchain_realized_profit_usd",
+    },
 }
 
 CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
@@ -551,6 +560,63 @@ def fetch_deribit_options(config: CryptoConfig) -> pd.DataFrame:
     return result[["date", "options_skew", "put_call_ratio", "dvol"]].reset_index(drop=True)
 
 
+def parse_glassnode_payload(payload: list[dict[str, Any]], column_name: str) -> pd.DataFrame:
+    rows = []
+    for item in payload:
+        rows.append({
+            "date": _utc_day(int(item["t"]), unit="s"),
+            column_name: float(item["v"])
+        })
+    if not rows:
+        return pd.DataFrame(columns=["date", column_name])
+    return pd.DataFrame(rows).sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
+def fetch_glassnode_sth_sopr(config: CryptoConfig) -> pd.DataFrame:
+    """Fetch Glassnode on-chain STH/SOPR data for BTC."""
+    api_key = get_source_api_key("glassnode_sth_sopr", get_source_env_var(config, "glassnode_sth_sopr"))
+    if not api_key:
+        raise ValueError("Missing GLASSNODE_API_KEY for Glassnode API fetch.")
+
+    base_url = getattr(config.sources, "glassnode_base_url", "https://api.glassnode.com").rstrip("/")
+    start_time = int(pd.Timestamp(config.sources.onchain_start).timestamp())
+    
+    endpoints = {
+        "onchain_sth_realized_price": "v1/metrics/market/realized_price_sth",
+        "onchain_sth_mvrv": "v1/metrics/market/mvrv_less_155",
+        "onchain_sth_sopr": "v1/metrics/indicators/sopr_less_155",
+        "onchain_sopr": "v1/metrics/indicators/sopr",
+        "onchain_realized_loss_usd": "v1/metrics/market/realized_loss_usd",
+        "onchain_realized_profit_usd": "v1/metrics/market/realized_profit_usd",
+    }
+    
+    frames = []
+    for col, endpoint in endpoints.items():
+        url = f"{base_url}/{endpoint}"
+        try:
+            payload = _get_json(
+                url,
+                {
+                    "a": "BTC",
+                    "s": start_time,
+                    "i": "24h",
+                    "api_key": api_key,
+                }
+            )
+            df = parse_glassnode_payload(payload, col)
+            frames.append(df)
+        except Exception:
+            pass
+            
+    if not frames:
+        return pd.DataFrame(columns=["date"])
+        
+    merged = frames[0]
+    for frame in frames[1:]:
+        merged = merged.merge(frame, on="date", how="outer")
+    return merged.sort_values("date").reset_index(drop=True)
+
+
 def _write_csv(path: Path, frame: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False)
@@ -602,6 +668,7 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         raw_dir / "coinbase_premium.csv",
         raw_dir / "stablecoin_supply.csv",
         raw_dir / "options_skew.csv",
+        raw_dir / "glassnode_sth_sopr.csv",
     ]
     for path in optional_files:
         if not path.exists():
@@ -728,6 +795,7 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     _sync_optional_source("coinbase_premium", fetch_coinbase_premium, config, raw_dir, "coinbase_premium.csv", summary)
     _sync_optional_source("stablecoin_supply", fetch_stablecoin_supply, config, raw_dir, "stablecoin_supply.csv", summary)
     _sync_optional_source("options_skew", fetch_deribit_options, config, raw_dir, "options_skew.csv", summary)
+    _sync_optional_source("glassnode_sth_sopr", fetch_glassnode_sth_sopr, config, raw_dir, "glassnode_sth_sopr.csv", summary)
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))

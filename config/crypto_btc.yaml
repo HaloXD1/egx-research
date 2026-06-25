@@ -66,6 +66,11 @@ sources:
       enabled: true
       env_var: DERIBIT_API_KEY
       required: false
+    glassnode_sth_sopr:
+      enabled: true
+      env_var: GLASSNODE_API_KEY
+      required: false
+
 
 
 backtest:

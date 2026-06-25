@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import pandas as pd
 
 from egx_research.crypto_config import CryptoConfig
@@ -16,6 +17,7 @@ from egx_research.crypto_data import (
     fetch_coinbase_premium,
     fetch_stablecoin_supply,
     fetch_deribit_options,
+    fetch_glassnode_sth_sopr,
 )
 
 
@@ -248,3 +250,63 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_fetch_glassnode_sth_sopr(monkeypatch) -> None:
+    config = CryptoConfig()
+    monkeypatch.setenv("GLASSNODE_API_KEY", "test_key")
+
+    endpoints_called = []
+    def mock_get_json(url, params=None):
+        endpoints_called.append(url)
+        assert params["api_key"] == "test_key"
+        assert params["a"] == "BTC"
+        assert params["i"] == "24h"
+        
+        # Determine value based on endpoint
+        val = 1.0
+        if "realized_price_sth" in url:
+            val = 35000.0
+        elif "mvrv_less_155" in url:
+            val = 1.15
+        elif "sopr_less_155" in url:
+            val = 0.98
+        elif "indicators/sopr" in url:
+            val = 0.99
+        elif "realized_loss_usd" in url:
+            val = 500000.0
+        elif "realized_profit_usd" in url:
+            val = 1200000.0
+
+        return [{"t": 1704067200, "v": val}]
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    
+    df = fetch_glassnode_sth_sopr(config)
+    assert not df.empty
+    assert len(endpoints_called) == 6
+    assert set(df.columns) == {
+        "date",
+        "onchain_sth_realized_price",
+        "onchain_sth_mvrv",
+        "onchain_sth_sopr",
+        "onchain_sopr",
+        "onchain_realized_loss_usd",
+        "onchain_realized_profit_usd",
+    }
+    row = df.iloc[0]
+    assert row["date"] == pd.Timestamp("2024-01-01")
+    assert row["onchain_sth_realized_price"] == 35000.0
+    assert row["onchain_sth_mvrv"] == 1.15
+    assert row["onchain_sth_sopr"] == 0.98
+    assert row["onchain_sopr"] == 0.99
+    assert row["onchain_realized_loss_usd"] == 500000.0
+    assert row["onchain_realized_profit_usd"] == 1200000.0
+
+
+def test_fetch_glassnode_sth_sopr_missing_credentials(monkeypatch) -> None:
+    config = CryptoConfig()
+    monkeypatch.delenv("GLASSNODE_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="Missing GLASSNODE_API_KEY"):
+        fetch_glassnode_sth_sopr(config)
+

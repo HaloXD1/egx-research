@@ -140,3 +140,66 @@ def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
     assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
     assert merged["options_options_skew"].equals(merged["options_skew"])
     assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])
+
+
+def test_sth_sopr_scoring_fallback_and_no_double_count() -> None:
+    # 1. Base data
+    rows = 50
+    idx = np.arange(rows)
+    close = 100.0 + idx * 0.5
+    
+    data = pd.DataFrame({
+        "date": pd.date_range("2025-01-01", periods=rows, freq="D"),
+        "open": close * 0.99,
+        "high": close * 1.01,
+        "low": close * 0.98,
+        "close": close,
+        "volume": 1000.0 + idx * 10,
+    })
+
+    # Test Case A: No real onchain data (only proxy fallback)
+    frame_a = _add_market_indicators(data)
+    assert (frame_a["sth_mvrv_source"] == "proxy").all()
+    assert (frame_a["sth_sopr_source"] == "missing").all()
+    assert frame_a["sth_mvrv"].equals(frame_a["sth_mvrv_proxy"])
+    
+    scores_a = _component_scores(frame_a)
+    assert "capitulation" in scores_a.columns
+    assert "onchain" in scores_a.columns
+    
+    # Test Case B: Real STH MVRV and overall SOPR (real_mvrv + real_sopr fallback)
+    data_b = data.copy()
+    data_b["onchain_sth_mvrv"] = 1.05  # real STH MVRV
+    data_b["onchain_sopr"] = 1.01      # real overall SOPR (fallback for STH SOPR)
+    
+    frame_b = _add_market_indicators(data_b)
+    assert (frame_b["sth_mvrv_source"] == "real").all()
+    assert (frame_b["sth_sopr_source"] == "real_sopr").all()
+    assert (frame_b["sth_mvrv"] == 1.05).all()
+    assert (frame_b["sth_sopr"] == 1.01).all()
+
+    scores_b = _component_scores(frame_b)
+    assert "capitulation" in scores_b.columns
+    assert "onchain" in scores_b.columns
+    
+    # Test Case C: Real STH SOPR takes precedence over overall SOPR
+    data_c = data.copy()
+    data_c["onchain_sth_sopr"] = 1.02
+    data_c["onchain_sopr"] = 1.01
+    
+    frame_c = _add_market_indicators(data_c)
+    assert (frame_c["sth_sopr_source"] == "real_sth").all()
+    assert (frame_c["sth_sopr"] == 1.02).all()
+
+    scores_c = _component_scores(frame_c)
+    assert "capitulation" in scores_c.columns
+    assert "onchain" in scores_c.columns
+
+    # Test Case D: Realized Loss Climax integration
+    data_d = data.copy()
+    data_d["onchain_realized_loss_usd"] = 100000.0
+    frame_d = _add_market_indicators(data_d)
+    assert "realized_loss_ratio" in frame_d.columns
+    # With constant realized loss, the ratio is 1.0 (no climax)
+    assert pytest.approx(frame_d["realized_loss_ratio"].iloc[20]) == 1.0
+

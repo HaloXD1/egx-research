@@ -306,3 +306,15 @@ def test_bottom_score_integration_does_not_affect_math(tmp_path) -> None:
     # but the value should not be affected by the reliability_score.
     best_row = res.summary["best_case"]
     assert best_row["confidence_pct"] == pytest.approx(best_row["confidence"] * 100)
+
+
+def test_glassnode_sth_sopr_source_metadata() -> None:
+    assert "glassnode_sth_sopr" in SOURCE_REGISTRY
+    meta = SOURCE_REGISTRY["glassnode_sth_sopr"]
+    assert meta["provider"] == "Glassnode"
+    assert meta["filename"] == "glassnode_sth_sopr.csv"
+    assert "onchain_sth_mvrv" in meta["required_columns"]
+    assert "onchain_sth_sopr" in meta["required_columns"]
+    assert meta["env_var"] == "GLASSNODE_API_KEY"
+    assert meta["critical"] is False
+
