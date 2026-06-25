@@ -10,5 +10,9 @@ data/raw/*
 !data/raw/.gitkeep
 data/normalized/*
 !data/normalized/.gitkeep
+data/crypto/**/*.csv
+data/crypto/**/*.json
+!data/crypto/**/.gitkeep
 runs/*
 !runs/.gitkeep
+

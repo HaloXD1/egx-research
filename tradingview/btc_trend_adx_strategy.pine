@@ -1,0 +1,106 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// BTC Trend ADX Strategy
+//@version=6
+strategy(
+     "BTC Trend ADX Strategy",
+     overlay = true,
+     initial_capital = 100000,
+     pyramiding = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.10,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 95,
+     process_orders_on_close = false,
+     calc_on_order_fills = true
+)
+
+fastMaLen = input.int(56, "Fast MA", minval = 1)
+slowMaLen = input.int(60, "Slow MA", minval = 2)
+trendMaLen = input.int(95, "Trend SMA", minval = 1)
+maType = input.string("SMA", "MA Type", options = ["SMA", "EMA"])
+adxLen = input.int(13, "ADX Length", minval = 1)
+adxThreshold = input.float(27.5, "ADX Threshold", minval = 1, step = 0.5)
+atrLen = input.int(27, "ATR Length", minval = 1)
+atrStopMult = input.float(5.9, "ATR Stop Mult", minval = 0.1, step = 0.1)
+atrTrailMult = input.float(4.5, "ATR Trail Mult", minval = 0.1, step = 0.1)
+executionMode = input.string("Clean Alert", "Execution Mode", options = ["Clean Alert", "Backtest Match"])
+positionSizePct = input.float(95.0, "Backtest Match Position %", minval = 1, maxval = 100, step = 1)
+showBg = input.bool(true, "Show Regime Background")
+showSignals = input.bool(false, "Show Extra Signal Shapes")
+
+matchMode = executionMode == "Backtest Match"
+
+plot(close, "Compiler Anchor", display = display.none)
+
+roundQty(value) =>
+    math.floor(value * 100000000.0) / 100000000.0
+
+ma(src, len) =>
+    maType == "EMA" ? ta.ema(src, len) : ta.sma(src, len)
+
+fastMa = ma(close, fastMaLen)
+slowMa = ma(close, slowMaLen)
+trendMa = ta.sma(close, trendMaLen)
+[_, _, adxValue] = ta.dmi(adxLen, adxLen)
+
+rawTarget = fastMa > slowMa and close > trendMa and adxValue >= adxThreshold ? 1.0 : 0.0
+var bool stoppedOut = false
+if rawTarget <= 0
+    stoppedOut := false
+preStopTarget = rawTarget > 0 and not stoppedOut ? 1.0 : 0.0
+
+atrValue = ta.atr(atrLen)
+var float entryClose = na
+var float highestClose = na
+var float activeStop = na
+
+if preStopTarget > 0 and nz(preStopTarget[1], 0) == 0
+    entryClose := close
+    highestClose := close
+    activeStop := close - atrValue * atrStopMult
+else if preStopTarget > 0
+    highestClose := math.max(nz(highestClose, close), close)
+    baseStop = nz(entryClose, close) - atrValue * atrStopMult
+    trailStop = highestClose - atrValue * atrTrailMult
+    activeStop := math.max(nz(activeStop, baseStop), math.max(baseStop, trailStop))
+else
+    entryClose := na
+    highestClose := na
+    activeStop := na
+
+stopTriggered = preStopTarget > 0 and not na(activeStop) and close <= activeStop
+if stopTriggered
+    stoppedOut := true
+
+finalExposure = rawTarget > 0 and not stoppedOut ? 1.0 : 0.0
+buySignal = finalExposure > 0 and nz(finalExposure[1], 0) <= 0
+sellSignal = finalExposure <= 0 and nz(finalExposure[1], 0) > 0
+matchQty = roundQty(strategy.equity * (positionSizePct / 100.0) * finalExposure / close)
+matchDelta = matchQty - strategy.position_size
+
+if barstate.isconfirmed
+    if matchMode
+        if matchDelta > 0
+            strategy.order("match_up", strategy.long, qty = matchDelta, comment = "MATCH BUY")
+        else if matchDelta < 0
+            strategy.order("match_down", strategy.short, qty = math.abs(matchDelta), comment = "MATCH SELL")
+    else if buySignal
+        strategy.entry("Long", strategy.long, comment = "BUY")
+    else if sellSignal
+        strategy.close("Long", comment = "SELL")
+
+plot(fastMa, "Fast MA", color = color.new(color.green, 0), linewidth = 1)
+plot(slowMa, "Slow MA", color = color.new(color.red, 0), linewidth = 1)
+plot(trendMa, "Trend SMA", color = color.orange, linewidth = 2)
+plot(activeStop, "ATR Stop", color = color.new(color.red, 0), linewidth = 1, style = plot.style_linebr)
+
+bgcolor(showBg ? finalExposure > 0 ? color.new(color.green, 88) : color.new(color.red, 92) : na)
+
+plotshape(showSignals and buySignal, title = "Buy", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, text = "BUY")
+plotshape(showSignals and sellSignal, title = "Sell", style = shape.triangledown, location = location.abovebar, color = color.orange, size = size.tiny, text = "SELL")
+
+plotchar(finalExposure * 100.0, title = "Target Exposure %", char = "", location = location.top)
+
+alertcondition(buySignal, "BTC Trend ADX Buy", "BTC Trend ADX target increased to 100%.")
+alertcondition(sellSignal, "BTC Trend ADX Sell", "BTC Trend ADX target reduced to 0%.")
+alertcondition(stopTriggered, "BTC Trend ADX ATR Stop", "BTC Trend ADX ATR stop triggered.")

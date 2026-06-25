@@ -1,0 +1,117 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// BTC Supertrend Swing Strategy
+//@version=6
+strategy(
+     "BTC Supertrend Swing Strategy",
+     overlay = true,
+     initial_capital = 100000,
+     pyramiding = 0,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.10,
+     process_orders_on_close = false,
+     calc_on_order_fills = true
+)
+
+stLen = input.int(19, "Supertrend ATR Length", minval = 1)
+stMult = input.float(5.8, "Supertrend Multiplier", minval = 0.1, step = 0.1)
+confirmationMaLen = input.int(50, "Confirmation SMA", minval = 1)
+rsiLen = input.int(26, "RSI Length", minval = 1)
+atrLen = input.int(25, "Risk ATR Length", minval = 1)
+atrStopMult = input.float(5.6, "ATR Stop Mult", minval = 0.1, step = 0.1)
+atrTrailMult = input.float(5.0, "ATR Trail Mult", minval = 0.1, step = 0.1)
+swingEmaLen = input.int(34, "Swing EMA", minval = 1)
+bounceEmaLen = input.int(8, "Bounce EMA", minval = 1)
+bbLen = input.int(34, "Swing BB Length", minval = 2)
+bbStd = input.float(2.0, "Swing BB Std", minval = 0.1, step = 0.1)
+buyRsi = input.float(55.0, "Buy Pullback RSI", minval = 1, maxval = 99, step = 1)
+sellRsi = input.float(68.0, "Sell High RSI", minval = 1, maxval = 99, step = 1)
+takeProfitAtr = input.float(2.4, "High Zone ATR", minval = 0.1, step = 0.1)
+pullbackMemoryBars = input.int(12, "Pullback Memory Bars", minval = 1)
+minHoldBars = input.int(21, "Minimum Hold Bars", minval = 0)
+cooldownBars = input.int(7, "Cooldown Bars After Sell", minval = 0)
+positionSizePct = input.float(95.0, "Position Size %", minval = 1, maxval = 100, step = 1)
+showBg = input.bool(true, "Show Regime Background")
+showSignals = input.bool(true, "Show Signal Shapes")
+showBands = input.bool(false, "Show Swing Bands")
+
+roundQty(value) =>
+    math.floor(value * 100000000.0) / 100000000.0
+
+[stLine, stDirection] = ta.supertrend(stMult, stLen)
+confirmationMa = ta.sma(close, confirmationMaLen)
+rsiValue = ta.rsi(close, rsiLen)
+atrValue = ta.atr(atrLen)
+swingEma = ta.ema(close, swingEmaLen)
+bounceEma = ta.ema(close, bounceEmaLen)
+[bbBasis, bbUpper, bbLower] = ta.bb(close, bbLen, bbStd)
+
+bullishRegime = close > stLine and close > confirmationMa
+pullbackNow = bullishRegime and (rsiValue <= buyRsi or close <= bbBasis or low <= swingEma or low <= bbLower)
+bounceCross = ta.crossover(close, bounceEma)
+basisCross = ta.crossover(close, bbBasis)
+bounceNow = close > bounceEma or close > close[1] or bounceCross or basisCross
+highZone = rsiValue >= sellRsi or high >= bbUpper or close >= swingEma + atrValue * takeProfitAtr
+
+var int pullbackBar = na
+var int entryBar = na
+var int exitBar = na
+var float highestClose = na
+var float activeStop = na
+
+inPosition = strategy.position_size > 0
+if pullbackNow
+    pullbackBar := bar_index
+
+recentPullback = not na(pullbackBar) and bar_index - pullbackBar <= pullbackMemoryBars
+cooldownDone = na(exitBar) or bar_index - exitBar >= cooldownBars
+heldBars = na(entryBar) ? 0 : bar_index - entryBar
+heldEnough = heldBars >= minHoldBars
+prevBullishRegime = bar_index > 0 ? bullishRegime[1] : false
+trendStart = bullishRegime and not prevBullishRegime and rsiValue < sellRsi
+
+entrySignal = not inPosition and cooldownDone and bullishRegime and ((recentPullback and bounceNow) or trendStart)
+exitSignal = inPosition and ((not bullishRegime) or (heldEnough and highZone))
+
+if inPosition
+    highestClose := math.max(nz(highestClose, close), close)
+    entryBasis = strategy.position_avg_price
+    baseStop = entryBasis - atrValue * atrStopMult
+    trailStop = highestClose - atrValue * atrTrailMult
+    activeStop := math.max(nz(activeStop, baseStop), math.max(baseStop, trailStop))
+else
+    highestClose := na
+    activeStop := na
+
+stopSignal = inPosition and not na(activeStop) and close <= activeStop
+sellSignal = exitSignal or stopSignal
+entryQty = roundQty(strategy.equity * (positionSizePct / 100.0) / close)
+
+if barstate.isconfirmed
+    if entrySignal and entryQty > 0
+        strategy.entry("Long", strategy.long, qty = entryQty, comment = "BUY")
+        entryBar := bar_index
+        highestClose := close
+    else if stopSignal
+        strategy.close("Long", comment = "STOP")
+        exitBar := bar_index
+    else if exitSignal
+        strategy.close("Long", comment = "SELL")
+        exitBar := bar_index
+
+plot(close, "Compiler Anchor", display = display.none)
+plot(stLine, "Supertrend", color = bullishRegime ? color.green : color.red, linewidth = 2, style = plot.style_linebr)
+plot(confirmationMa, "Confirmation SMA", color = color.orange, linewidth = 1)
+plot(swingEma, "Swing EMA", color = color.new(color.yellow, 0), linewidth = 1)
+plot(showBands ? bbUpper : na, "Swing BB Upper", color = color.new(color.gray, 40), linewidth = 1)
+plot(showBands ? bbLower : na, "Swing BB Lower", color = color.new(color.gray, 40), linewidth = 1)
+plot(activeStop, "ATR Stop", color = color.new(color.red, 0), linewidth = 1, style = plot.style_linebr)
+
+bgcolor(showBg ? inPosition ? color.new(color.green, 88) : bullishRegime ? color.new(color.yellow, 92) : color.new(color.red, 92) : na)
+
+plotshape(showSignals and entrySignal, title = "Buy", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, text = "BUY")
+plotshape(showSignals and exitSignal, title = "Sell", style = shape.triangledown, location = location.abovebar, color = color.orange, size = size.tiny, text = "SELL")
+plotshape(showSignals and stopSignal, title = "Stop", style = shape.xcross, location = location.abovebar, color = color.red, size = size.tiny, text = "STOP")
+
+alertcondition(entrySignal, "BTC Supertrend Swing Buy", "BTC Supertrend Swing entered a bullish pullback recovery.")
+alertcondition(exitSignal, "BTC Supertrend Swing Sell", "BTC Supertrend Swing reached high zone or broke trend.")
+alertcondition(stopSignal, "BTC Supertrend Swing Stop", "BTC Supertrend Swing ATR stop triggered.")

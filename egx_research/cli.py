@@ -13,6 +13,12 @@ from egx_research.annual_top10 import (
 from egx_research.blackcat_research import run_blackcat_research
 from egx_research.config import load_config
 from egx_research.core_satellite import run_core_satellite_backtest
+from egx_research.crypto_config import load_crypto_config
+from egx_research.crypto_bottom import run_crypto_bottom_score
+from egx_research.crypto_data import sync_crypto_data
+from egx_research.crypto_paper_tracking import paper_track_crypto_strategy
+from egx_research.crypto_reporting import generate_crypto_report
+from egx_research.crypto_research import run_crypto_research
 from egx_research.data import ingest_source
 from egx_research.hybrid_filter_research import run_hybrid_filter_research
 from egx_research.optimization import optimize_run
@@ -99,6 +105,124 @@ def report(
 ) -> None:
     report_path = generate_report(run_id=run_id, config_path=config_path)
     typer.echo(f"report={report_path}")
+
+
+@app.command("crypto-sync")
+def crypto_sync(
+    config_path: Path = typer.Option(
+        Path("config/crypto_btc.yaml"), "--config", help="Crypto config path."
+    ),
+) -> None:
+    config = load_crypto_config(config_path)
+    features_path = sync_crypto_data(config)
+    typer.echo(f"crypto_sync={features_path}")
+
+
+@app.command("crypto-research")
+def crypto_research(
+    config_path: Path = typer.Option(
+        Path("config/crypto_btc.yaml"), "--config", help="Crypto config path."
+    ),
+    family: str | None = typer.Option(None, "--family", help="Single family override."),
+    trials: int | None = typer.Option(None, "--trials", help="Trial override."),
+    objective: str | None = typer.Option(None, "--objective", help="Objective override."),
+    run_id: str | None = typer.Option(None, "--run-id", help="Run id override."),
+) -> None:
+    config = load_crypto_config(config_path)
+    actual_run_id = run_crypto_research(
+        config=config,
+        config_path=config_path,
+        trials_override=trials,
+        family_override=family,
+        run_id=run_id,
+        objective_mode_override=objective,
+    )
+    typer.echo(f"crypto_research_run={actual_run_id}")
+
+
+@app.command("crypto-report")
+def crypto_report(
+    run_id: str = typer.Option(..., "--run-id", help="Run id under runs/."),
+) -> None:
+    report_path = generate_crypto_report(run_id)
+    typer.echo(f"crypto_report={report_path}")
+
+
+@app.command("crypto-bottom-score")
+def crypto_bottom_score(
+    config_path: Path = typer.Option(
+        Path("config/crypto_btc.yaml"), "--config", help="Crypto config path."
+    ),
+    run_id: str | None = typer.Option(None, "--run-id", help="Output run id override."),
+    as_of_date: str | None = typer.Option(
+        None, "--as-of-date", help="Score using data on or before YYYY-MM-DD."
+    ),
+    require_source: list[str] | None = typer.Option(
+        None, "--require-source", help="Require a source name to be fresh/present; repeatable."
+    ),
+    no_html: bool = typer.Option(False, "--no-html", help="Delete generated HTML report after writing JSON/CSVs."),
+    refresh_first: bool = typer.Option(False, "--refresh-first", help="Run crypto-sync before scoring."),
+) -> None:
+    config = load_crypto_config(config_path)
+    if refresh_first:
+        sync_crypto_data(config)
+    result = run_crypto_bottom_score(
+        config=config,
+        config_path=config_path,
+        run_id=run_id,
+        as_of_date=as_of_date,
+    )
+    if require_source:
+        statuses = result.summary.get("data_quality", {}).get("source_statuses", {})
+        missing = []
+        for source in require_source:
+            status = statuses.get(source, {}).get("status")
+            if status not in {"success", "partial"}:
+                missing.append(f"{source}:{status or 'missing'}")
+        if missing:
+            raise typer.BadParameter(f"Required source not usable: {', '.join(missing)}")
+    if no_html and result.report_path.exists():
+        result.report_path.unlink()
+    best = result.summary["best_case"]
+    rec = result.summary.get("recommendation_details", {})
+    typer.echo(
+        "crypto_bottom_score="
+        f"{result.run_dir} confidence={best['confidence_pct']:.1f}% "
+        f"regime={result.summary.get('regime', {}).get('primary', 'n/a')} "
+        f"action={rec.get('action', 'n/a')} "
+        f"horizon={best['horizon_days']}d tolerance={best['tolerance_pct']:.0f}% "
+        f"report={'disabled' if no_html else result.report_path}"
+    )
+
+
+@app.command("crypto-paper-track")
+def crypto_paper_track(
+    model_run_id: str = typer.Option(
+        ..., "--model-run-id", help="Crypto research run id to source best model from."
+    ),
+    start_date: str = typer.Option(
+        ..., "--start-date", help="Paper tracking start date YYYY-MM-DD."
+    ),
+    config_path: Path = typer.Option(
+        Path("config/crypto_btc.yaml"), "--config", help="Crypto config path."
+    ),
+    out_run_id: str | None = typer.Option(
+        None, "--run-id", help="Output run id override."
+    ),
+    max_data_stale_days: int = typer.Option(
+        2,
+        "--max-data-stale-days",
+        help="Block action instructions if BTC data is older than this.",
+    ),
+) -> None:
+    run_dir = paper_track_crypto_strategy(
+        model_run_id=model_run_id,
+        start_date=start_date,
+        config_path=config_path,
+        out_run_id=out_run_id,
+        max_data_stale_days=max_data_stale_days,
+    )
+    typer.echo(f"crypto_paper_track={run_dir}")
 
 
 @app.command("paper-track")
