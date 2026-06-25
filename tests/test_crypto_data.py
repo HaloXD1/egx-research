@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_data import (
@@ -16,6 +17,11 @@ from egx_research.crypto_data import (
     fetch_coinbase_premium,
     fetch_stablecoin_supply,
     fetch_deribit_options,
+    fetch_exchange_stablecoin_reserves,
+    fetch_futures_positioning,
+    fetch_liquidations,
+    fetch_exchange_flows,
+    fetch_glassnode_sth_sopr,
 )
 
 
@@ -169,6 +175,48 @@ def test_feature_panel_keeps_current_options_snapshot(tmp_path) -> None:
     assert pd.isna(panel.iloc[-1]["options_dvol"])
 
 
+def test_feature_panel_coalesces_duplicate_optional_aliases(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.date_range("2024-01-01", periods=3, freq="D")
+    pd.DataFrame(
+        {
+            "date": dates,
+            "open": [10, 11, 12],
+            "high": [11, 12, 13],
+            "low": [9, 10, 11],
+            "close": [10, 11, 12],
+            "volume": [100, 110, 120],
+        }
+    ).to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+    pd.DataFrame(
+        {
+            "date": dates,
+            "dvol": [50.0, 51.0, 52.0],
+            "options_dvol": [60.0, 61.0, 62.0],
+        }
+    ).to_csv(tmp_path / "raw" / "options_skew.csv", index=False)
+    pd.DataFrame(
+        {
+            "date": dates,
+            "long_liq_usd": [1000.0, 2000.0, 3000.0],
+            "derivatives_long_liq_usd": [4000.0, 5000.0, 6000.0],
+        }
+    ).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel = build_crypto_feature_panel(config)
+
+    assert list(panel.columns).count("options_dvol") == 1
+    assert list(panel.columns).count("derivatives_long_liq_usd") == 1
+    assert panel.iloc[1]["options_dvol"] == 50.0
+    assert panel.iloc[1]["derivatives_long_liq_usd"] == 1000.0
+
+
 def test_fetch_open_interest(monkeypatch) -> None:
     config = CryptoConfig()
     mock_payload = [
@@ -243,8 +291,288 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
     df = fetch_deribit_options(config)
     assert not df.empty
-    assert list(df.columns) == ["date", "options_skew", "put_call_ratio", "dvol"]
+    assert {"date", "options_skew", "put_call_ratio", "dvol"}.issubset(df.columns)
     assert df.iloc[0]["date"] == today.tz_convert(None)
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_fetch_stablecoin_supply_hardening(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # 1. DefiLlama failure, no cache -> returns empty dataframe gracefully
+    def mock_get_json_fail(url, params=None):
+        raise ValueError("Simulated network failure")
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json_fail)
+    
+    df = fetch_stablecoin_supply(config)
+    assert df.empty
+    assert list(df.columns) == ["date", "stablecoin_supply"]
+    
+    # 2. DefiLlama failure, cache exists -> returns cache
+    cache_df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "stablecoin_supply": [100.0, 101.0]
+    })
+    cache_df.to_csv(tmp_path / "stablecoin_supply.csv", index=False)
+    
+    df = fetch_stablecoin_supply(config)
+    assert not df.empty
+    assert len(df) == 2
+    assert df.iloc[1]["stablecoin_supply"] == 101.0
+    assert df.iloc[1]["date"] == pd.Timestamp("2024-01-02")
+
+
+def test_fetch_exchange_stablecoin_reserves_csv_fallback(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # Mock API fail/missing
+    monkeypatch.setenv("EXCHANGE_STABLECOIN_RESERVES_API_KEY", "")
+    monkeypatch.setenv("CRYPTOQUANT_API_KEY", "")
+    
+    # Cache exists
+    cache_df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "exchange_stablecoin_reserves": [50.0, 52.0]
+    })
+    cache_df.to_csv(tmp_path / "exchange_stablecoin_reserves.csv", index=False)
+    
+    df = fetch_exchange_stablecoin_reserves(config)
+    assert not df.empty
+    assert len(df) == 2
+    assert df.iloc[1]["exchange_stablecoin_reserves"] == 52.0
+
+
+def test_fetch_exchange_stablecoin_reserves_missing_graceful(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # Mock API fail/missing and no CSV file
+    monkeypatch.setenv("EXCHANGE_STABLECOIN_RESERVES_API_KEY", "")
+    monkeypatch.setenv("CRYPTOQUANT_API_KEY", "")
+    
+    df = fetch_exchange_stablecoin_reserves(config)
+    assert df.empty
+    assert list(df.columns) == ["date", "exchange_stablecoin_reserves"]
+
+
+def test_fetch_futures_positioning_from_local_csv(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-01")],
+            "open_interest": [1000.0],
+            "basis": [0.001],
+            "taker_buy_sell_ratio": [1.05],
+            "long_short_ratio": [1.2],
+            "leverage_ratio": [0.8],
+        }
+    ).to_csv(tmp_path / "futures_positioning.csv", index=False)
+
+    def fail_fetch(url, params=None):
+        raise RuntimeError("offline")
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", fail_fetch)
+    frame = fetch_futures_positioning(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["derivatives_open_interest"] == 1000.0
+    assert frame.iloc[0]["derivatives_basis"] == 0.001
+
+
+def test_fetch_futures_positioning_api_payloads(monkeypatch) -> None:
+    config = CryptoConfig()
+    ts = 1704067200000
+
+    def mock_get_json(url, params=None):
+        if "openInterestHist" in url:
+            return [{"timestamp": ts, "sumOpenInterest": "1000"}]
+        if "basis" in url:
+            return [{"timestamp": ts, "basisRate": "0.002"}]
+        if "takerlongshortRatio" in url:
+            return [{"timestamp": ts, "buySellRatio": "1.1"}]
+        if "globalLongShortAccountRatio" in url:
+            return [{"timestamp": ts, "longShortRatio": "1.3"}]
+        return []
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    frame = fetch_futures_positioning(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["derivatives_open_interest"] == 1000.0
+    assert frame.iloc[0]["derivatives_basis"] == 0.002
+    assert frame.iloc[0]["derivatives_taker_buy_sell_ratio"] == 1.1
+    assert frame.iloc[0]["derivatives_long_short_ratio"] == 1.3
+    assert pd.isna(frame.iloc[0]["derivatives_leverage_ratio"])
+
+
+def test_parse_liquidations_payload() -> None:
+    from egx_research.crypto_data import parse_liquidations_payload
+    payload = {
+        "data": [
+            {
+                "date": 1704067200000,
+                "buyVolUsd": 500000.0,
+                "sellVolUsd": 300000.0,
+                "heatmap_down": 41000.0,
+                "heatmap_up": 43500.0
+            }
+        ]
+    }
+    df = parse_liquidations_payload(payload)
+    assert not df.empty
+    assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert df.iloc[0]["long_liq_usd"] == 500000.0
+    assert df.iloc[0]["short_liq_usd"] == 300000.0
+    assert df.iloc[0]["total_liq_usd"] == 800000.0
+    assert df.iloc[0]["liq_imbalance"] == pytest.approx(0.25)
+    assert df.iloc[0]["heatmap_nearest_down_liq"] == 41000.0
+    assert df.iloc[0]["heatmap_nearest_up_liq"] == 43500.0
+
+
+def test_canonicalize_liquidations_csv(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    # 1. Unprefixed CSV test
+    dates = pd.date_range("2024-01-01", periods=2, freq="D")
+    pd.DataFrame({
+        "date": dates,
+        "open": [10, 11],
+        "high": [11, 12],
+        "low": [9, 10],
+        "close": [10, 11],
+        "volume": [100, 110],
+    }).to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+
+    pd.DataFrame({
+        "date": dates,
+        "long_liq_usd": [5000.0, 6000.0],
+        "short_liq_usd": [2000.0, 1000.0],
+        "total_liq_usd": [7000.0, 7000.0],
+        "liq_imbalance": [0.428, 0.714],
+        "heatmap_nearest_down_liq": [9.5, 10.5],
+        "heatmap_nearest_up_liq": [10.5, 11.5]
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel1 = build_crypto_feature_panel(config)
+    assert "derivatives_long_liq_usd" in panel1.columns
+    # Check shift is applied (lag safety): index 0 has NaN (shifted), index 1 has index 0 value (5000.0)
+    assert pd.isna(panel1.iloc[0]["derivatives_long_liq_usd"])
+    assert panel1.iloc[1]["derivatives_long_liq_usd"] == 5000.0
+    assert panel1.iloc[1]["derivatives_heatmap_nearest_down_liq"] == 9.5
+
+    # 2. Already prefixed CSV test
+    pd.DataFrame({
+        "date": dates,
+        "derivatives_long_liq_usd": [7000.0, 8000.0],
+        "derivatives_short_liq_usd": [3000.0, 2000.0],
+        "derivatives_total_liq_usd": [10000.0, 10000.0],
+        "derivatives_liq_imbalance": [0.4, 0.6],
+        "derivatives_heatmap_nearest_down_liq": [9.0, 10.0],
+        "derivatives_heatmap_nearest_up_liq": [11.0, 12.0]
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel2 = build_crypto_feature_panel(config)
+    assert "derivatives_long_liq_usd" in panel2.columns
+    assert pd.isna(panel2.iloc[0]["derivatives_long_liq_usd"])
+    assert panel2.iloc[1]["derivatives_long_liq_usd"] == 7000.0
+    assert panel2.iloc[1]["derivatives_heatmap_nearest_down_liq"] == 9.0
+
+
+def test_fetch_liquidations_uses_local_fallback_without_key(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("COINGLASS_API_KEY", raising=False)
+
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-01")],
+            "derivatives_long_liq_usd": [1000.0],
+            "derivatives_short_liq_usd": [500.0],
+            "derivatives_total_liq_usd": [1500.0],
+            "derivatives_liq_imbalance": [1 / 3],
+        }
+    ).to_csv(tmp_path / "liquidations.csv", index=False)
+
+    frame = fetch_liquidations(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["long_liq_usd"] == 1000.0
+
+
+def test_fetch_deribit_options_historical_api(monkeypatch) -> None:
+    config = CryptoConfig()
+    monkeypatch.setenv("DERIBIT_API_KEY", "test-key")
+
+    def mock_get_json(url, params=None, headers=None):
+        assert headers == {"Authorization": "Bearer test-key"}
+        return {
+            "result": [
+                {
+                    "timestamp": 1704067200000,
+                    "skew": 0.12,
+                    "put_call_ratio": 1.4,
+                    "dvol": 55.0,
+                    "options_25d_skew": 0.10,
+                    "options_put_call_oi": 1.5,
+                    "options_put_call_volume": 1.3,
+                    "options_iv_30d": 0.72,
+                    "options_term_structure": 1.08,
+                    "options_dvol": 55.0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    df = fetch_deribit_options(config)
+    assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert df.iloc[0]["options_25d_skew"] == 0.10
+    assert df.iloc[0]["options_put_call_oi"] == 1.5
+
+
+def test_fetch_exchange_flows_local_csv_aliases(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("CRYPTOQUANT_API_KEY", raising=False)
+    pd.DataFrame(
+        {
+            "date": ["2024-01-01", "2024-01-02"],
+            "exchange_reserve_btc": [2_000_000.0, 1_990_000.0],
+            "exchange_netflow_btc": [-1500.0, -2500.0],
+            "netflow_usd": [-60_000_000.0, -100_000_000.0],
+            "whale_inflow_usd": [10_000_000.0, 12_000_000.0],
+            "realized_pnl": [-50_000_000.0, -75_000_000.0],
+        }
+    ).to_csv(tmp_path / "exchange_flows.csv", index=False)
+
+    frame = fetch_exchange_flows(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[1]["onchain_exchange_reserve_btc"] == 1_990_000.0
+    assert frame.iloc[1]["onchain_exchange_netflow_btc"] == -2500.0
+
+
+def test_fetch_glassnode_sth_sopr_local_csv_without_key(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("GLASSNODE_API_KEY", raising=False)
+    pd.DataFrame(
+        {
+            "date": ["2024-01-01"],
+            "onchain_sth_realized_price": [38_000.0],
+            "onchain_sth_mvrv": [0.95],
+            "onchain_sth_sopr": [0.98],
+            "onchain_sopr": [0.99],
+            "onchain_realized_loss_usd": [100_000_000.0],
+            "onchain_realized_profit_usd": [25_000_000.0],
+        }
+    ).to_csv(tmp_path / "glassnode_sth_sopr.csv", index=False)
+
+    frame = fetch_glassnode_sth_sopr(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["onchain_sth_mvrv"] == 0.95

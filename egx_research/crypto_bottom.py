@@ -65,22 +65,56 @@ def _load_optional_source(raw_dir: Path, filename: str) -> pd.DataFrame | None:
 # Columns the component scoring reads via _optional_column.
 _SIGNAL_COLUMNS = [
     "funding_rate_mean", "derivatives_open_interest", "derivatives_liquidations_long_usd",
+    "derivatives_basis", "derivatives_taker_buy_sell_ratio",
+    "derivatives_long_short_ratio", "derivatives_leverage_ratio",
+    "derivatives_long_liq_usd", "derivatives_short_liq_usd", "derivatives_total_liq_usd",
+    "derivatives_liq_imbalance", "derivatives_heatmap_nearest_down_liq", "derivatives_heatmap_nearest_up_liq",
     "CapMVRVCur", "FlowInExUSD", "FlowOutExUSD", "AdrActCnt", "TxCnt",
     "etf_net_flow_usd", "etf_net_flow_btc", "spot_coinbase_premium",
-    "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
+    "liquidity_stablecoin_supply", "liquidity_exchange_stablecoin_reserves", "liquidity_dry_powder_ratio",
+    "options_options_skew", "options_put_call_ratio",
+    "options_25d_skew", "options_put_call_oi", "options_put_call_volume",
+    "options_iv_30d", "options_term_structure", "options_dvol",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
+    "etf_flow_ibit", "etf_flow_fbtc", "etf_flow_arkb", "etf_flow_bitb", "etf_flow_gbtc",
+    "onchain_exchange_reserve_btc", "onchain_exchange_netflow_btc",
+    "onchain_exchange_netflow_usd", "onchain_whale_inflow_usd",
+    "onchain_realized_profit_loss_exchange",
+    "onchain_sth_realized_price", "onchain_sth_mvrv", "onchain_sth_sopr",
+    "onchain_sopr", "onchain_realized_loss_usd", "onchain_realized_profit_usd",
 ]
 
 _SIGNAL_ALIASES = {
     "derivatives_open_interest": "open_interest",
     "derivatives_open_interest_value": "open_interest_value",
+    "derivatives_basis": "basis",
+    "derivatives_taker_buy_sell_ratio": "taker_buy_sell_ratio",
+    "derivatives_long_short_ratio": "long_short_ratio",
+    "derivatives_leverage_ratio": "leverage_ratio",
     "spot_coinbase_close": "coinbase_close",
     "spot_coinbase_premium": "coinbase_premium",
     "liquidity_stablecoin_supply": "stablecoin_supply",
+    "liquidity_exchange_stablecoin_reserves": "exchange_stablecoin_reserves",
+    "liquidity_dry_powder_ratio": "dry_powder_ratio",
     "options_options_skew": "options_skew",
     "options_put_call_ratio": "put_call_ratio",
     "options_dvol": "dvol",
+    "options_25d_skew": "options_skew",
+    "options_put_call_oi": "put_call_ratio",
+    "derivatives_liquidations_long_usd": "derivatives_long_liq_usd",
+    "derivatives_long_liq_usd": "long_liq_usd",
+    "derivatives_short_liq_usd": "short_liq_usd",
+    "derivatives_total_liq_usd": "total_liq_usd",
+    "derivatives_liq_imbalance": "liq_imbalance",
+    "derivatives_heatmap_nearest_down_liq": "heatmap_nearest_down_liq",
+    "derivatives_heatmap_nearest_up_liq": "heatmap_nearest_up_liq",
+    "onchain_sth_realized_price": "sth_realized_price",
+    "onchain_sth_mvrv": "sth_mvrv",
+    "onchain_sth_sopr": "sth_sopr",
+    "onchain_sopr": "sopr",
+    "onchain_realized_loss_usd": "realized_loss_usd",
+    "onchain_realized_profit_usd": "realized_profit_usd",
 }
 
 
@@ -93,6 +127,9 @@ def _apply_signal_aliases(panel: pd.DataFrame) -> pd.DataFrame:
             panel[canonical] = panel[alias]
         else:
             panel[canonical] = panel[canonical].combine_first(panel[alias])
+    # Also handle fallback mapping if raw name is in panel
+    if "long_liq_usd" in panel.columns and "derivatives_liquidations_long_usd" not in panel.columns:
+        panel["derivatives_liquidations_long_usd"] = panel["long_liq_usd"]
     return panel
 
 
@@ -103,9 +140,14 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
     optional_files = {
         "btc_etf_flows.csv": "etf",
         "open_interest.csv": "derivatives",
+        "futures_positioning.csv": "derivatives",
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
+        "exchange_stablecoin_reserves.csv": "liquidity",
         "options_skew.csv": "options",
+        "liquidations.csv": "derivatives",
+        "exchange_flows.csv": "onchain",
+        "glassnode_sth_sopr.csv": "onchain",
     }
     for filename, prefix in optional_files.items():
         source = _load_optional_source(raw_dir, filename)
@@ -131,6 +173,17 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         panel[column] = _safe_numeric(panel[column]).shift(1)
 
     panel = _apply_signal_aliases(panel)
+
+    # Compute lag-safe dry powder ratio after shifting loop
+    if "liquidity_dry_powder_ratio" not in panel.columns:
+        stable_col = "liquidity_stablecoin_supply"
+        if stable_col in panel.columns and "close" in panel.columns and panel[stable_col].notna().any():
+            sply_col = "SplyCur" if "SplyCur" in panel.columns else ("onchain_SplyCur" if "onchain_SplyCur" in panel.columns else None)
+            sply = panel[sply_col] if sply_col else pd.Series(19500000.0, index=panel.index)
+            sply = sply.fillna(19500000.0).replace(0, 19500000.0)
+            prev_close = panel["close"].shift(1)
+            btc_mcap_lagged = prev_close * sply
+            panel["liquidity_dry_powder_ratio"] = panel[stable_col] / btc_mcap_lagged.replace(0, np.nan)
 
     # Report columns that actually have data (including those already in features)
     active = [col for col in _SIGNAL_COLUMNS if col in panel.columns and panel[col].notna().any()]
@@ -195,10 +248,40 @@ def _add_market_indicators(data: pd.DataFrame) -> pd.DataFrame:
     pv = frame["close"] * frame["volume"]
     rolling_pv = pv.rolling(155, min_periods=30).sum()
     rolling_v = frame["volume"].rolling(155, min_periods=30).sum()
-    sth_realized_price = rolling_pv / rolling_v.replace(0, np.nan)
-    sth_realized_price = sth_realized_price.fillna(frame["close"])
-    frame["sth_realized_price"] = sth_realized_price
-    frame["sth_mvrv"] = frame["close"] / sth_realized_price
+    sth_realized_price_proxy = rolling_pv / rolling_v.replace(0, np.nan)
+    sth_realized_price_proxy = sth_realized_price_proxy.fillna(frame["close"])
+    frame["sth_realized_price_proxy"] = sth_realized_price_proxy
+    frame["sth_mvrv_proxy"] = frame["close"] / sth_realized_price_proxy
+
+    # Prefer real STH realized price, fall back to proxy
+    if "onchain_sth_realized_price" in frame.columns:
+        frame["sth_realized_price"] = _safe_numeric(frame["onchain_sth_realized_price"]).fillna(sth_realized_price_proxy)
+    else:
+        frame["sth_realized_price"] = sth_realized_price_proxy
+
+    # Prefer real STH MVRV, fall back to proxy, set audit label
+    if "onchain_sth_mvrv" in frame.columns:
+        real_mvrv = _safe_numeric(frame["onchain_sth_mvrv"])
+        frame["sth_mvrv"] = real_mvrv.fillna(frame["sth_mvrv_proxy"])
+        frame["sth_mvrv_source"] = np.where(real_mvrv.notna(), "real", "proxy")
+    else:
+        frame["sth_mvrv"] = frame["sth_mvrv_proxy"]
+        frame["sth_mvrv_source"] = "proxy"
+
+    # STH SOPR fallback cascade: real STH SOPR -> real overall SOPR -> missing
+    real_sth_sopr = _optional_column(frame, "onchain_sth_sopr")
+    real_sopr = _optional_column(frame, "onchain_sopr")
+    frame["sth_sopr"] = real_sth_sopr.fillna(real_sopr)
+    frame["sth_sopr_source"] = np.where(
+        real_sth_sopr.notna(),
+        "real_sth",
+        np.where(real_sopr.notna(), "real_sopr", "missing")
+    )
+
+    # Realized Loss Climax ratio (realized loss compared to 30d average)
+    realized_loss = _optional_column(frame, "onchain_realized_loss_usd")
+    frame["realized_loss_ratio"] = realized_loss / realized_loss.rolling(30, min_periods=10).mean().replace(0, np.nan)
+
 
     days_since = []
     lows = frame["low"].to_numpy(dtype=float)
@@ -211,6 +294,52 @@ def _add_market_indicators(data: pd.DataFrame) -> pd.DataFrame:
         low_offset = int(np.nanargmin(window))
         days_since.append(index - (start + low_offset))
     frame["days_since_30d_low"] = days_since
+
+    # ETF flow indicators
+    etf_ibit = _optional_column(frame, "etf_flow_ibit")
+    etf_fbtc = _optional_column(frame, "etf_flow_fbtc")
+    etf_arkb = _optional_column(frame, "etf_flow_arkb")
+    etf_bitb = _optional_column(frame, "etf_flow_bitb")
+    etf_gbtc = _optional_column(frame, "etf_flow_gbtc")
+    etf_total = _optional_column(frame, "etf_net_flow_usd")
+
+    etf_ibit_filled = etf_ibit.fillna(0.0)
+    etf_fbtc_filled = etf_fbtc.fillna(0.0)
+    etf_arkb_filled = etf_arkb.fillna(0.0)
+    etf_bitb_filled = etf_bitb.fillna(0.0)
+    etf_gbtc_filled = etf_gbtc.fillna(0.0)
+    etf_total_filled = etf_total.fillna(0.0)
+
+    frame["etf_flow_5d_sum"] = etf_total_filled.rolling(5, min_periods=1).sum()
+    frame["etf_flow_20d_sum"] = etf_total_filled.rolling(20, min_periods=1).sum()
+    frame["etf_flow_acceleration"] = frame["etf_flow_5d_sum"] - frame["etf_flow_20d_sum"] / 4.0
+
+    # Flow pct of BTC market cap
+    sply = _optional_column(frame, "SplyCur").ffill().fillna(19.5e6)
+    mcap = frame["close"] * sply
+    frame["etf_flow_pct_mcap_5d"] = frame["etf_flow_5d_sum"] / mcap.replace(0, np.nan)
+
+    # ex-GBTC flows
+    ex_gbtc_flow = etf_total - etf_gbtc
+    ex_gbtc_flow_filled = ex_gbtc_flow.fillna(0.0)
+    frame["etf_ex_gbtc_flow_5d_sum"] = ex_gbtc_flow_filled.rolling(5, min_periods=1).sum()
+    frame["etf_ex_gbtc_flow_20d_sum"] = ex_gbtc_flow_filled.rolling(20, min_periods=1).sum()
+
+    # ex-GBTC persistence: fraction of trading days in the last 20 calendar days where ex_gbtc_flow > 0
+    pos_ex_gbtc_days = (ex_gbtc_flow > 0).rolling(20, min_periods=1).sum().fillna(0.0)
+    trade_days = (ex_gbtc_flow.notna() & (ex_gbtc_flow != 0)).rolling(20, min_periods=1).sum().fillna(0.0)
+    frame["etf_ex_gbtc_persistence_20d"] = (pos_ex_gbtc_days / trade_days.replace(0, np.nan)).fillna(0.0)
+
+    # Issuer breadth: non-GBTC major issuers with positive flows
+    breadth = (
+        (etf_ibit > 0).astype(int) +
+        (etf_fbtc > 0).astype(int) +
+        (etf_arkb > 0).astype(int) +
+        (etf_bitb > 0).astype(int)
+    )
+    frame["etf_issuer_breadth"] = breadth / 4.0
+    frame["etf_issuer_breadth_5d"] = frame["etf_issuer_breadth"].rolling(5, min_periods=1).mean().fillna(0.0)
+
     return frame
 
 
@@ -218,6 +347,72 @@ def _optional_column(frame: pd.DataFrame, column: str) -> pd.Series:
     if column in frame.columns:
         return _safe_numeric(frame[column])
     return pd.Series(np.nan, index=frame.index, dtype=float)
+
+
+def _derivatives_subsignals(frame: pd.DataFrame) -> pd.DataFrame:
+    funding = _optional_column(frame, "funding_rate_mean")
+    funding_reset = _scale_between(-funding, -0.0002, 0.0015)
+    funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
+    oi = _optional_column(frame, "derivatives_open_interest")
+    oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
+    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
+    short_liq = _optional_column(frame, "derivatives_short_liq_usd")
+    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
+    liq_imbalance = _optional_column(frame, "derivatives_liq_imbalance")
+    if liq_imbalance.isna().all() and not long_liq.isna().all() and not short_liq.isna().all():
+        denom = long_liq + short_liq
+        liq_imbalance = ((long_liq - short_liq) / denom.replace(0, np.nan)).fillna(0.0)
+    imbalance_washout = _scale_between(liq_imbalance, 0.4, 0.9)
+    heatmap_down = _optional_column(frame, "derivatives_heatmap_nearest_down_liq")
+    heatmap_risk = _scale_between((frame["close"] - heatmap_down) / frame["close"].replace(0, np.nan), 0.0, 0.05)
+
+    out = pd.DataFrame(
+        {
+            "sub_derivatives_funding_reset": funding_reset,
+            "sub_derivatives_funding_cooling": funding_cooling,
+            "sub_derivatives_oi_flush": oi_flush,
+            "sub_derivatives_long_liq_spike": long_liq_spike,
+            "sub_derivatives_imbalance_washout": imbalance_washout,
+            "sub_derivatives_heatmap_risk": heatmap_risk,
+        },
+        index=frame.index,
+    )
+
+    has_new_positioning = any(
+        _optional_column(frame, column).notna().any()
+        for column in [
+            "derivatives_basis",
+            "derivatives_taker_buy_sell_ratio",
+            "derivatives_long_short_ratio",
+            "derivatives_leverage_ratio",
+        ]
+    )
+    if not has_new_positioning:
+        return out
+
+    spot_led_bounce = pd.Series(np.nan, index=frame.index, dtype=float)
+    if oi.notna().any():
+        spot_led = frame["close"].pct_change(5) - oi.pct_change(5)
+        spot_led_bounce = _scale_between(spot_led, -0.05, 0.15)
+
+    lev = _optional_column(frame, "derivatives_leverage_ratio")
+    lev_flush = _scale_between(-lev.pct_change(7), -0.10, 0.20)
+    lev_mean_90 = lev.rolling(90, min_periods=30).mean()
+    lev_std_90 = lev.rolling(90, min_periods=30).std()
+    lev_z = (lev - lev_mean_90) / lev_std_90.replace(0, np.nan)
+    lev_cheap = 1.0 - _scale_between(lev_z, -1.5, 1.5)
+    leverage_reset = pd.concat([lev_flush, lev_cheap], axis=1).mean(axis=1)
+
+    ls_ratio = _optional_column(frame, "derivatives_long_short_ratio")
+    taker_ratio = _optional_column(frame, "derivatives_taker_buy_sell_ratio")
+    ls_penalty = 1.0 - _scale_between(ls_ratio, 1.2, 2.2)
+    taker_penalty = 1.0 - _scale_between(taker_ratio, 1.0, 1.3)
+    overheated_long_short_penalty = pd.concat([ls_penalty, taker_penalty], axis=1).mean(axis=1)
+
+    out["sub_derivatives_spot_led_bounce"] = spot_led_bounce
+    out["sub_derivatives_leverage_reset"] = leverage_reset
+    out["sub_derivatives_overheated_long_short_penalty"] = overheated_long_short_penalty
+    return out
 
 
 def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
@@ -251,16 +446,40 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     wick_reversal = (_scale_between(frame["down_wick_pct"], 0.01, 0.08) * _scale_between(frame["close_location"], 0.45, 0.85))
     vol_flush = _scale_between(frame["vol30"], 0.45, 1.10)
     post_flush = _scale_between(frame["vol_compression"], -0.10, 0.35)
-    out["capitulation"] = pd.concat([drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap], axis=1).mean(axis=1)
+    cap_signals = [drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap]
 
-    funding = _optional_column(frame, "funding_rate_mean")
-    funding_reset = _scale_between(-funding, -0.0002, 0.0015)
-    funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
-    oi = _optional_column(frame, "derivatives_open_interest")
-    oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
+    # STH SOPR capitulation (only if sth_sopr has valid data)
+    sth_sopr = frame["sth_sopr"] if "sth_sopr" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_cap = 1.0 - _scale_between(sth_sopr, 0.94, 1.02)
+        cap_signals.append(sth_sopr_cap)
+
+    # Realized Loss Climax (only if realized_loss_ratio has valid data)
+    realized_loss_ratio = frame["realized_loss_ratio"] if "realized_loss_ratio" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if realized_loss_ratio.notna().any():
+        realized_loss_climax = _scale_between(realized_loss_ratio, 1.5, 6.0)
+        cap_signals.append(realized_loss_climax)
+
+    # Liquidations and Heatmap features
     long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
+    short_liq = _optional_column(frame, "derivatives_short_liq_usd")
     long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
-    out["derivatives"] = pd.concat([funding_reset, funding_cooling, oi_flush, long_liq_spike], axis=1).mean(axis=1)
+
+    liq_imbalance = _optional_column(frame, "derivatives_liq_imbalance")
+    if liq_imbalance.isna().all() and not long_liq.isna().all() and not short_liq.isna().all():
+        denom = long_liq + short_liq
+        liq_imbalance = (long_liq - short_liq) / denom.replace(0, np.nan)
+        liq_imbalance = liq_imbalance.fillna(0.0)
+    imbalance_washout_score = _scale_between(liq_imbalance, 0.4, 0.9)
+
+    heatmap_down = _optional_column(frame, "derivatives_heatmap_nearest_down_liq")
+    heatmap_risk_score = _scale_between((frame["close"] - heatmap_down) / frame["close"].replace(0, np.nan), 0.0, 0.05)
+
+    cap_signals.extend([long_liq_spike, imbalance_washout_score, heatmap_risk_score])
+    out["capitulation"] = pd.concat(cap_signals, axis=1).mean(axis=1)
+
+    derivative_signals = _derivatives_subsignals(frame)
+    out["derivatives"] = derivative_signals.mean(axis=1)
 
     mvrv = _optional_column(frame, "CapMVRVCur")
     mvrv_cheap = 1.0 - _scale_between(mvrv, 1.0, 2.7)
@@ -280,22 +499,87 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     mvrv_zscore = (mcap - rcap) / mcap.expanding(min_periods=30).std().replace(0.0, np.nan)
     zscore_cheapness = 1.0 - _scale_between(mvrv_zscore, 0.1, 5.0)
 
-    out["onchain"] = pd.concat([mvrv_cheap, mvrv_recovery, exchange_outflow, active_recovery, tx_recovery, zscore_cheapness], axis=1).mean(axis=1)
+    # New exchange flows indicators
+    reserve = _optional_column(frame, "onchain_exchange_reserve_btc")
+    reserve_change_90 = reserve.pct_change(90)
+    reserve_downtrend = _scale_between(-reserve_change_90, -0.01, 0.05)
+
+    netflow_btc = _optional_column(frame, "onchain_exchange_netflow_btc").fillna(
+        _optional_column(frame, "onchain_exchange_netflow_usd") / frame["close"].replace(0, np.nan)
+    )
+    rolling_outflow_14d_btc = (-netflow_btc).rolling(14, min_periods=5).mean()
+    net_outflow_cap = _scale_between(rolling_outflow_14d_btc, 100, 5000)
+
+    whale_inflow = _optional_column(frame, "onchain_whale_inflow_usd")
+    whale_ratio = whale_inflow / whale_inflow.rolling(30, min_periods=10).mean().replace(0, np.nan)
+    whale_inflow_score = 1.0 - _scale_between(whale_ratio, 1.2, 2.5)
+
+    realized_pl = _optional_column(frame, "onchain_realized_profit_loss_exchange")
+    pl_mean = realized_pl.rolling(90, min_periods=30).mean()
+    pl_std = realized_pl.rolling(90, min_periods=30).std().replace(0, np.nan)
+    pl_zscore = (realized_pl - pl_mean) / pl_std
+    realized_capitulation = _scale_between(-pl_zscore, 1.0, 2.5)
+
+    # Precedence logic: dedicated net_outflow_cap replaces legacy exchange_outflow if data is present
+    if net_outflow_cap.notna().any():
+        exchange_flow_final = net_outflow_cap
+    else:
+        exchange_flow_final = exchange_outflow
+
+    onchain_signals = [
+        mvrv_cheap,
+        mvrv_recovery,
+        exchange_flow_final,
+        active_recovery,
+        tx_recovery,
+        zscore_cheapness,
+    ]
+
+    if reserve_downtrend.notna().any():
+        onchain_signals.append(reserve_downtrend)
+    if whale_inflow_score.notna().any():
+        onchain_signals.append(whale_inflow_score)
+    if realized_capitulation.notna().any():
+        onchain_signals.append(realized_capitulation)
+
+    sth_mvrv_reclaim = _scale_between(sth_mvrv, 0.98, 1.05)
+    onchain_signals.append(sth_mvrv_reclaim)
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_reclaim = _scale_between(sth_sopr, 0.98, 1.04)
+        onchain_signals.append(sth_sopr_reclaim)
+
+    out["onchain"] = pd.concat(onchain_signals, axis=1).mean(axis=1)
 
     spot_signals: list[pd.Series] = []
     etf_flow = _optional_column(frame, "etf_net_flow_usd").fillna(_optional_column(frame, "etf_net_flow_btc") * frame["close"])
     if etf_flow.notna().sum() > 30:
-        # Forward-fill over weekends/gaps (max 3 days) so rolling windows stay valid
-        etf_filled = etf_flow.ffill(limit=3)
-        etf_5d = etf_filled.rolling(5, min_periods=3).sum()
-        etf_20d_abs = etf_filled.abs().rolling(20, min_periods=5).sum()
-        spot_signals.append(_scale_between(etf_5d / etf_20d_abs.replace(0, np.nan), -0.05, 0.35))
+        etf_5d = frame["etf_flow_5d_sum"]
+        etf_20d_abs = etf_flow.abs().fillna(0.0).rolling(20, min_periods=5).sum()
+        total_flow_ratio = etf_5d / etf_20d_abs.replace(0, np.nan)
+        total_flow_score = _scale_between(total_flow_ratio, -0.05, 0.35).fillna(0.5)
+
+        ex_gbtc_5d = frame["etf_ex_gbtc_flow_5d_sum"]
+        gbtc_flow = _optional_column(frame, "etf_flow_gbtc")
+        ex_gbtc_flow = etf_flow - gbtc_flow
+        ex_gbtc_20d_abs = ex_gbtc_flow.abs().fillna(0.0).rolling(20, min_periods=5).sum()
+        ex_gbtc_flow_ratio = ex_gbtc_5d / ex_gbtc_20d_abs.replace(0, np.nan)
+        ex_gbtc_flow_score = _scale_between(ex_gbtc_flow_ratio, -0.05, 0.35).fillna(0.5)
+
+        persistence = frame["etf_ex_gbtc_persistence_20d"]
+        breadth_5d = frame["etf_issuer_breadth_5d"]
+
+        etf_score = 0.4 * total_flow_score + 0.6 * (ex_gbtc_flow_score * (0.3 + 0.7 * (0.5 * persistence + 0.5 * breadth_5d)))
+        spot_signals.append(etf_score)
     coinbase_premium = _optional_column(frame, "spot_coinbase_premium")
     if coinbase_premium.notna().sum() > 30:
         spot_signals.append(_scale_between(coinbase_premium, -0.002, 0.006))
     stable_supply = _optional_column(frame, "liquidity_stablecoin_supply")
     if stable_supply.notna().sum() > 30:
         spot_signals.append(_scale_between(stable_supply.pct_change(30), -0.02, 0.08))
+        spot_signals.append(_scale_between(stable_supply.pct_change(90), -0.05, 0.15))
+    exchange_reserves = _optional_column(frame, "liquidity_exchange_stablecoin_reserves")
+    if exchange_reserves.notna().sum() > 30:
+        spot_signals.append(_scale_between(exchange_reserves.pct_change(30), -0.05, 0.15))
     # Volume ratio: crypto trades 24/7 but weekends are naturally lower; 0.6 floor
     spot_signals.append(_scale_between(frame["volume_ratio_20"], 0.6, 2.0))
     out["spot_demand"] = pd.concat(spot_signals, axis=1).mean(axis=1) if spot_signals else pd.Series(0.5, index=frame.index)
@@ -310,7 +594,19 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     yield_tailwind = _scale_between(-(us10y - us10y.shift(20)), -0.25, 0.60)
     vix_cooling = _scale_between(-(vix - vix.shift(20)) / vix.shift(20).replace(0, np.nan), -0.10, 0.35)
     liquidity = _scale_between(fed_liq.pct_change(60), -0.03, 0.06)
-    out["macro"] = pd.concat([macro_risk, dollar_tailwind, yield_tailwind, vix_cooling, liquidity], axis=1).mean(axis=1)
+
+    macro_signals = [macro_risk, dollar_tailwind, yield_tailwind, vix_cooling, liquidity]
+    dry_powder = _optional_column(frame, "liquidity_dry_powder_ratio")
+    if dry_powder.notna().sum() > 30:
+        macro_signals.append(_scale_between(dry_powder, 0.05, 0.20))
+    elif stable_supply is not None and stable_supply.notna().sum() > 30:
+        sply = _optional_column(frame, "SplyCur").fillna(19500000.0)
+        prev_close = frame["close"].shift(1)
+        btc_mcap_lagged = prev_close * sply
+        dry_powder_calc = stable_supply / btc_mcap_lagged.replace(0, np.nan)
+        macro_signals.append(_scale_between(dry_powder_calc, 0.05, 0.20))
+
+    out["macro"] = pd.concat(macro_signals, axis=1).mean(axis=1)
 
     # Derived NUPL signal
     nupl = 1.0 - 1.0 / mvrv.replace(0.0, np.nan)
@@ -319,13 +615,16 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     fear_greed = _optional_column(frame, "fear_greed_value")
     fear_washout = 1.0 - _scale_between(fear_greed, 18, 60)
     fear_recovery = _scale_between(fear_greed - fear_greed.rolling(14, min_periods=5).min(), 0, 25)
-    options_skew = _optional_column(frame, "options_options_skew")
-    put_call = _optional_column(frame, "options_put_call_ratio")
+    opt_skew = _optional_column(frame, "options_25d_skew").fillna(_optional_column(frame, "options_options_skew"))
+    opt_pcr_oi = _optional_column(frame, "options_put_call_oi").fillna(_optional_column(frame, "options_put_call_ratio"))
+    opt_pcr_vol = _optional_column(frame, "options_put_call_volume")
+
+    options_skew_panic = _scale_between(opt_skew, 0.0, 0.20)
+    options_oi_panic = _scale_between(opt_pcr_oi, 0.8, 1.6)
+    options_vol_panic = _scale_between(opt_pcr_vol, 0.8, 1.6)
+
     hedge_washout = pd.concat(
-        [
-            _scale_between(options_skew, 0.0, 0.20),
-            _scale_between(put_call, 0.8, 1.6),
-        ],
+        [options_skew_panic, options_oi_panic, options_vol_panic],
         axis=1,
     ).mean(axis=1)
     out["sentiment"] = pd.concat([fear_washout, fear_recovery, hedge_washout, nupl_washout], axis=1).mean(axis=1)
@@ -610,6 +909,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <div class="summary">
     <p><strong>Current read:</strong> {best['confidence_pct']:.1f}% confidence that the recent BTC low holds over {best['horizon_days']} days with a {best['tolerance_pct']:.0f}% allowed breach. Band: <strong>{html.escape(best['confidence_band'])}</strong>.</p>
     <p><strong>Recommendation:</strong> {html.escape(summary['recommendation'])}</p>
+    <p><strong>Liquidation Driver:</strong> {html.escape(summary.get('washout_driver_text', ''))}</p>
     <p><strong>Important:</strong> this is a historical probability score, not a guarantee that BTC cannot print a lower wick.</p>
   </div>
   <p>
@@ -708,6 +1008,47 @@ def run_crypto_bottom_score(
     data_quality = run_data_quality_checks(config, frame, as_of)
 
 
+    # Heatmap downside penalty calculation
+    close_val = float(latest["close"])
+    down_liq = float(latest.get("derivatives_heatmap_nearest_down_liq", np.nan))
+    if pd.isna(down_liq):
+        down_liq = float(latest.get("heatmap_nearest_down_liq", np.nan))
+
+    penalty_factor = 1.0
+    if not pd.isna(down_liq) and down_liq > 0 and close_val > 0:
+        distance_pct = (close_val - down_liq) / close_val
+        if 0 < distance_pct < 0.03:
+            penalty_factor = 1.0 - 0.15 * (1.0 - distance_pct / 0.03)
+
+    # Liquidation washout check
+    long_liq_series = _optional_column(frame, "derivatives_liquidations_long_usd")
+    if long_liq_series.notna().any():
+        # rolling 3-day max of the spike
+        spike_series = long_liq_series / long_liq_series.rolling(30, min_periods=10).mean()
+        recent_spike = float(spike_series.iloc[max(0, latest_idx - 2):latest_idx + 1].max())
+    else:
+        recent_spike = 0.0
+
+    imbalance_series = _optional_column(frame, "derivatives_liq_imbalance")
+    if imbalance_series.isna().all():
+        short_liq_series = _optional_column(frame, "derivatives_short_liq_usd")
+        if long_liq_series.notna().any() and short_liq_series.notna().any():
+            denom = long_liq_series + short_liq_series
+            imbalance_series = (long_liq_series - short_liq_series) / denom.replace(0, np.nan)
+            imbalance_series = imbalance_series.fillna(0.0)
+
+    if imbalance_series.notna().any():
+        recent_imbalance = float(imbalance_series.iloc[max(0, latest_idx - 2):latest_idx + 1].max())
+    else:
+        recent_imbalance = 0.0
+
+    washout_detected = (recent_spike >= 3.0) or (recent_imbalance >= 0.7)
+
+    if washout_detected:
+        washout_text = f"Washout detected (recent spike: {recent_spike:.1f}x, imbalance: {recent_imbalance:.1%}). Recent leverage flush cleared out buyers, supporting bottom formation."
+    else:
+        washout_text = "No washout: lack of severe liquidation spikes suggests leverage is still building or calm."
+
     run_name = run_id or f"crypto-bottom-score-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / run_name)
 
@@ -717,6 +1058,7 @@ def run_crypto_bottom_score(
     latest_scores = {}
     best_row: dict[str, Any] | None = None
     strict_probability = 0.0
+    strict_adjusted_probability = 0.0
 
     for horizon in HORIZONS:
         for tolerance in TOLERANCES:
@@ -728,8 +1070,10 @@ def run_crypto_bottom_score(
             rule_prob, calibration_method = _calibrate_from_bins(blended_score, labels, mask, latest_score, base_rate)
             ml_prob, coefs = _fit_logistic_probability(components, labels, mask, latest_idx)
             confidence = float(_clip01(rule_prob if ml_prob is None else 0.55 * rule_prob + 0.45 * ml_prob))
+            adjusted_confidence = confidence * penalty_factor
             if horizon == 60 and tolerance == 0.05:
                 strict_probability = confidence
+                strict_adjusted_probability = adjusted_confidence
             row = {
                 "horizon_days": horizon,
                 "tolerance": tolerance,
@@ -740,7 +1084,10 @@ def run_crypto_bottom_score(
                 "ml_probability": ml_prob,
                 "confidence": confidence,
                 "confidence_pct": confidence * 100,
+                "adjusted_confidence": adjusted_confidence,
+                "adjusted_confidence_pct": adjusted_confidence * 100,
                 "confidence_band": _confidence_band(confidence),
+                "adjusted_confidence_band": _confidence_band(adjusted_confidence),
                 "weighted_signal_score": latest_score,
                 "calibration_method": calibration_method,
             }
@@ -768,6 +1115,7 @@ def run_crypto_bottom_score(
     best_weights = latest_scores[best_key]["weights"]
     levels = _support_resistance(latest, best_row["tolerance"])
     recommendation = _recommendation(float(best_row["confidence"]), strict_probability, latest)
+    adjusted_recommendation = _recommendation(float(best_row["adjusted_confidence"]), strict_adjusted_probability, latest)
 
     component_snapshot = [
         {
@@ -800,17 +1148,39 @@ def run_crypto_bottom_score(
         },
         "best_case": best_row,
         "strict_60d_5pct_confidence": strict_probability,
+        "strict_60d_5pct_adjusted_confidence": strict_adjusted_probability,
+        "heatmap_penalty_factor": penalty_factor,
+        "washout_driver_text": washout_text,
         "recommendation": recommendation,
+        "adjusted_recommendation": adjusted_recommendation,
         "levels": levels,
         "component_snapshot": component_snapshot,
         "model_note": "Probability recent low holds inside horizon/tolerance; not a guarantee of no lower print.",
         "data_quality": data_quality,
         "reliability_rating": data_quality["reliability_rating"],
         "reliability_note": data_quality["reliability_note"],
+        "options_audit": {
+            "options_25d_skew": float(latest["options_25d_skew"]) if "options_25d_skew" in latest and pd.notna(latest["options_25d_skew"]) else None,
+            "options_put_call_oi": float(latest["options_put_call_oi"]) if "options_put_call_oi" in latest and pd.notna(latest["options_put_call_oi"]) else None,
+            "options_put_call_volume": float(latest["options_put_call_volume"]) if "options_put_call_volume" in latest and pd.notna(latest["options_put_call_volume"]) else None,
+            "options_iv_30d": float(latest["options_iv_30d"]) if "options_iv_30d" in latest and pd.notna(latest["options_iv_30d"]) else None,
+            "options_term_structure": float(latest["options_term_structure"]) if "options_term_structure" in latest and pd.notna(latest["options_term_structure"]) else None,
+            "options_dvol": float(latest["options_dvol"]) if "options_dvol" in latest and pd.notna(latest["options_dvol"]) else None,
+        },
     }
 
+    derivatives_audit = _derivatives_subsignals(frame).copy()
+    derivatives_audit.insert(0, "date", frame["date"])
+    derivatives_audit["derivatives_overall"] = components["derivatives"]
+    derivatives_audit.to_csv(run_dir / "bottom_derivatives_audit.csv", index=False)
+
+    audit_components = components.copy()
+    for column in derivatives_audit.columns:
+        if column != "date":
+            audit_components[column] = derivatives_audit[column]
+
     grid.to_csv(run_dir / "bottom_probability_grid.csv", index=False)
-    components.to_csv(run_dir / "bottom_component_scores.csv", index=False)
+    audit_components.to_csv(run_dir / "bottom_component_scores.csv", index=False)
     hitrates_all.to_csv(run_dir / "bottom_feature_hitrates.csv", index=False)
     write_json(run_dir / "bottom_model_coefficients.json", coef_payload)
     write_json(run_dir / "bottom_score_summary.json", to_native(summary))

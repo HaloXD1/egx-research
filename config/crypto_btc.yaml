@@ -54,6 +54,10 @@ sources:
       enabled: true
       env_var: BINANCE_API_KEY
       required: false
+    futures_positioning:
+      enabled: true
+      env_var: ""
+      required: false
     coinbase_premium:
       enabled: true
       env_var: COINBASE_API_KEY
@@ -62,9 +66,25 @@ sources:
       enabled: true
       env_var: DEFILLAMA_API_KEY
       required: false
+    exchange_stablecoin_reserves:
+      enabled: true
+      env_var: EXCHANGE_STABLECOIN_RESERVES_API_KEY
+      required: false
     options_skew:
       enabled: true
       env_var: DERIBIT_API_KEY
+      required: false
+    liquidations:
+      enabled: true
+      env_var: COINGLASS_API_KEY
+      required: false
+    exchange_flows:
+      enabled: true
+      env_var: CRYPTOQUANT_API_KEY
+      required: false
+    glassnode_sth_sopr:
+      enabled: true
+      env_var: GLASSNODE_API_KEY
       required: false
 
 
