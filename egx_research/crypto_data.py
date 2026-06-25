@@ -1257,13 +1257,24 @@ def _canonical_optional_columns(path: Path, frame: pd.DataFrame) -> pd.DataFrame
     if prefix is None:
         return frame
     canonical_columns = OPTIONAL_CANONICAL_COLUMNS.get(path.name, set())
-    return frame.rename(
+    renamed = frame.rename(
         columns={
             column: f"{prefix}_{column}"
             for column in frame.columns
             if column != "date" and column not in canonical_columns
         }
     )
+    if not renamed.columns.has_duplicates:
+        return renamed
+
+    deduped = pd.DataFrame(index=renamed.index)
+    for column in dict.fromkeys(renamed.columns):
+        values = renamed.loc[:, column]
+        if isinstance(values, pd.DataFrame):
+            deduped[column] = values.bfill(axis=1).iloc[:, 0]
+        else:
+            deduped[column] = values
+    return deduped
 
 
 def _should_keep_current_snapshot(panel: pd.DataFrame, column: str) -> bool:

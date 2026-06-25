@@ -175,6 +175,48 @@ def test_feature_panel_keeps_current_options_snapshot(tmp_path) -> None:
     assert pd.isna(panel.iloc[-1]["options_dvol"])
 
 
+def test_feature_panel_coalesces_duplicate_optional_aliases(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.date_range("2024-01-01", periods=3, freq="D")
+    pd.DataFrame(
+        {
+            "date": dates,
+            "open": [10, 11, 12],
+            "high": [11, 12, 13],
+            "low": [9, 10, 11],
+            "close": [10, 11, 12],
+            "volume": [100, 110, 120],
+        }
+    ).to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+    pd.DataFrame(
+        {
+            "date": dates,
+            "dvol": [50.0, 51.0, 52.0],
+            "options_dvol": [60.0, 61.0, 62.0],
+        }
+    ).to_csv(tmp_path / "raw" / "options_skew.csv", index=False)
+    pd.DataFrame(
+        {
+            "date": dates,
+            "long_liq_usd": [1000.0, 2000.0, 3000.0],
+            "derivatives_long_liq_usd": [4000.0, 5000.0, 6000.0],
+        }
+    ).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel = build_crypto_feature_panel(config)
+
+    assert list(panel.columns).count("options_dvol") == 1
+    assert list(panel.columns).count("derivatives_long_liq_usd") == 1
+    assert panel.iloc[1]["options_dvol"] == 50.0
+    assert panel.iloc[1]["derivatives_long_liq_usd"] == 1000.0
+
+
 def test_fetch_open_interest(monkeypatch) -> None:
     config = CryptoConfig()
     mock_payload = [
