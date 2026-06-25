@@ -316,3 +316,38 @@ def test_exchange_flows_registry() -> None:
     assert meta["critical"] is False
     assert "onchain_exchange_reserve_btc" in meta["required_columns"]
 
+
+def test_exchange_flows_empty_optional_status(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    dummy_price = pd.DataFrame(
+        {
+            "date": pd.date_range("2024-01-01", periods=5, freq="D"),
+            "open": [10, 11, 12, 13, 14],
+            "high": [11, 12, 13, 14, 15],
+            "low": [9, 10, 11, 12, 13],
+            "close": [10, 11, 12, 13, 14],
+            "volume": [100, 110, 120, 130, 140],
+        }
+    )
+    monkeypatch.setattr("egx_research.crypto_data.fetch_binance_klines", lambda c: dummy_price)
+    for source in SOURCE_REGISTRY:
+        if source not in ("binance", "exchange_flows"):
+            target = (
+                "egx_research.crypto_data.fetch_deribit_options"
+                if source == "options_skew"
+                else f"egx_research.crypto_data.fetch_{source}"
+            )
+            monkeypatch.setattr(target, lambda c: pd.DataFrame(columns=["date"]))
+
+    sync_crypto_data(config)
+    import json
+
+    summary = json.loads((tmp_path / "features" / "sync_summary.json").read_text())
+    assert summary["source_statuses"]["exchange_flows"] == "missing_optional"
+    assert not (tmp_path / "raw" / "exchange_flows.csv").exists()

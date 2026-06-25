@@ -775,7 +775,6 @@ def _sync_optional_source(
             summary["coinmetrics"] = cm_summary
         else:
             data = fetch_fn(config)
-        _write_csv(raw_dir / filename, data)
         if name == "funding_rates":
             rows_key = "funding_rows"
         elif name == "btc_etf_flows":
@@ -783,7 +782,11 @@ def _sync_optional_source(
         else:
             rows_key = f"{name}_rows"
         summary[rows_key] = int(len(data))
-        source_statuses[name] = "success"
+        if len(data) == 0 and not SOURCE_REGISTRY.get(name, {}).get("critical", False):
+            source_statuses[name] = "missing_optional"
+        else:
+            _write_csv(raw_dir / filename, data)
+            source_statuses[name] = "success"
     except Exception as exc:
         if is_source_required(config, name):
             raise
