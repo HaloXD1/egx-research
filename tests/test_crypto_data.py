@@ -123,15 +123,50 @@ def test_feature_panel_shifts_external_features(tmp_path) -> None:
     assert panel.iloc[1]["CapMVRVCur"] == 1.0
     assert panel.iloc[3]["macro_nasdaq"] == 101.0
     
-    # Assertions for the new columns showing they are present and properly lagged
-    assert pd.isna(panel.iloc[0]["open_interest"])
-    assert panel.iloc[1]["open_interest"] == 1000.0
-    assert panel.iloc[1]["open_interest_value"] == 10.0
-    assert panel.iloc[1]["coinbase_premium"] == 0.005
-    assert panel.iloc[1]["stablecoin_supply"] == 100.0
-    assert panel.iloc[1]["options_skew"] == 0.1
-    assert panel.iloc[1]["put_call_ratio"] == 1.1
-    assert panel.iloc[1]["dvol"] == 50.0
+    # Assertions for the new columns showing they are canonicalized and lagged.
+    assert pd.isna(panel.iloc[0]["derivatives_open_interest"])
+    assert panel.iloc[1]["derivatives_open_interest"] == 1000.0
+    assert panel.iloc[1]["derivatives_open_interest_value"] == 10.0
+    assert panel.iloc[1]["spot_coinbase_premium"] == 0.005
+    assert panel.iloc[1]["liquidity_stablecoin_supply"] == 100.0
+    assert panel.iloc[1]["options_options_skew"] == 0.1
+    assert panel.iloc[1]["options_put_call_ratio"] == 1.1
+    assert panel.iloc[1]["options_dvol"] == 50.0
+
+
+def test_feature_panel_keeps_current_options_snapshot(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    dates = pd.date_range("2024-01-01", periods=4, freq="D")
+    price = pd.DataFrame(
+        {
+            "date": dates,
+            "open": [10, 11, 12, 13],
+            "high": [11, 12, 13, 14],
+            "low": [9, 10, 11, 12],
+            "close": [10, 11, 12, 13],
+            "volume": [100, 110, 120, 130],
+        }
+    )
+    price.to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+    pd.DataFrame(
+        {
+            "date": [dates[-1]],
+            "options_skew": [-0.25],
+            "put_call_ratio": [0.75],
+            "dvol": [42.0],
+        }
+    ).to_csv(tmp_path / "raw" / "options_skew.csv", index=False)
+
+    panel = build_crypto_feature_panel(config)
+    assert panel.iloc[-1]["options_options_skew"] == -0.25
+    assert panel.iloc[-1]["options_put_call_ratio"] == 0.75
+    assert pd.isna(panel.iloc[-1]["options_dvol"])
 
 
 def test_fetch_open_interest(monkeypatch) -> None:
@@ -213,4 +248,3 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
-

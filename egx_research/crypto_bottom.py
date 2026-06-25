@@ -13,6 +13,8 @@ from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_research import load_crypto_feature_data
 from egx_research.indicators import adx, atr, bollinger_bands, ema, macd, rsi, sma
 from egx_research.utils import ensure_dir, to_native, write_json
+from egx_research.crypto_sources import run_data_quality_checks
+
 
 
 HORIZONS = (30, 60, 90)
@@ -70,6 +72,29 @@ _SIGNAL_COLUMNS = [
     "macro_fed_liquidity", "macro_vix",
 ]
 
+_SIGNAL_ALIASES = {
+    "derivatives_open_interest": "open_interest",
+    "derivatives_open_interest_value": "open_interest_value",
+    "spot_coinbase_close": "coinbase_close",
+    "spot_coinbase_premium": "coinbase_premium",
+    "liquidity_stablecoin_supply": "stablecoin_supply",
+    "options_options_skew": "options_skew",
+    "options_put_call_ratio": "put_call_ratio",
+    "options_dvol": "dvol",
+}
+
+
+def _apply_signal_aliases(panel: pd.DataFrame) -> pd.DataFrame:
+    panel = panel.copy()
+    for canonical, alias in _SIGNAL_ALIASES.items():
+        if alias not in panel.columns:
+            continue
+        if canonical not in panel.columns:
+            panel[canonical] = panel[alias]
+        else:
+            panel[canonical] = panel[canonical].combine_first(panel[alias])
+    return panel
+
 
 def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[pd.DataFrame, list[str]]:
     panel = data.copy()
@@ -104,6 +129,8 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
     optional_columns = [column for column in panel.columns if column not in base_columns and column != "date"]
     for column in optional_columns:
         panel[column] = _safe_numeric(panel[column]).shift(1)
+
+    panel = _apply_signal_aliases(panel)
 
     # Report columns that actually have data (including those already in features)
     active = [col for col in _SIGNAL_COLUMNS if col in panel.columns and panel[col].notna().any()]
@@ -523,6 +550,44 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
         )
     grid_html = grid.to_html(index=False, float_format=lambda x: f"{x:.3f}")
     hitrate_html = hitrates.to_html(index=False, float_format=lambda x: f"{x:.3f}") if not hitrates.empty else "<p>No hitrate table.</p>"
+    
+    dq = summary.get("data_quality", {})
+    dq_warnings_html = ""
+    if dq.get("warnings"):
+        dq_warnings_html = "<h3>Warnings:</h3><ul>" + "".join(f"<li>{html.escape(w)}</li>" for w in dq["warnings"]) + "</ul>"
+    else:
+        dq_warnings_html = "<p>No warnings. All critical data sources are fresh.</p>"
+
+    rating_color = "green"
+    if dq.get("reliability_rating") == "Warning":
+        rating_color = "orange"
+    elif dq.get("reliability_rating") == "Degraded":
+        rating_color = "red"
+
+    dq_details_rows = []
+    for name, status in sorted(dq.get("source_statuses", {}).items()):
+        status_color = "green"
+        if status["status"] in ("stale", "partial"):
+            status_color = "orange"
+        elif status["status"] == "missing":
+            status_color = "red"
+            
+        lag_val = status["lag_hours"]
+        lag_str = f"{lag_val:.1f}" if lag_val is not None else "N/A"
+            
+        dq_details_rows.append(
+            "<tr>"
+            f"<td>{html.escape(name)}</td>"
+            f"<td>{html.escape(status['provider'])}</td>"
+            f"<td>{html.escape(status['category'])}</td>"
+            f"<td style='color: {status_color}; font-weight: bold;'>{html.escape(status['status'])}</td>"
+            f"<td>{lag_str}</td>"
+            f"<td>{html.escape(status['latest_date'] or 'N/A')}</td>"
+            f"<td>{status['coverage']:.1%}</td>"
+            f"<td>{'Critical' if status['critical'] else 'Optional'}</td>"
+            "</tr>"
+        )
+
     return f"""<!doctype html>
 <html>
 <head>
@@ -554,6 +619,32 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
     <span class="pill">Invalidation ${_format_num(summary['levels']['invalidation_low'])}</span>
   </p>
 
+  <h2>Data Quality & Reliability Audit</h2>
+  <div class="summary" style="border-left: 5px solid {rating_color}; background: #fafafa;">
+    <p><strong>Reliability Rating:</strong> {dq.get('reliability_rating')} (Score: {dq.get('reliability_score', 1.0):.2f})</p>
+    <p><strong>Status Note:</strong> {html.escape(dq.get('reliability_note', ''))}</p>
+    {dq_warnings_html}
+  </div>
+
+  <h3>Source Quality Details</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Source</th>
+        <th>Provider</th>
+        <th>Category</th>
+        <th>Status</th>
+        <th>Lag (Hours)</th>
+        <th>Latest Date</th>
+        <th>Coverage</th>
+        <th>Type</th>
+      </tr>
+    </thead>
+    <tbody>
+      {"".join(dq_details_rows)}
+    </tbody>
+  </table>
+
   <h2>What The Model Is Saying</h2>
   <p>The framework combines price structure, capitulation, derivatives, on-chain value, spot demand, macro, and sentiment. Weights are learned from historical hit rate lift for the selected horizon and tolerance, then blended with a small prior so scarce optional data cannot dominate.</p>
   <table>
@@ -583,6 +674,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
 </html>"""
 
 
+
 def _interpret_component(score: float) -> str:
     if score >= 0.75:
         return "strong support"
@@ -610,8 +702,11 @@ def run_crypto_bottom_score(
             raise ValueError(f"No BTC data on or before {as_of_date}.")
         latest_idx = int(eligible[-1])
     else:
+        as_of = pd.Timestamp(frame["date"].max())
         latest_idx = int(frame.index[-1])
     latest = frame.loc[latest_idx]
+    data_quality = run_data_quality_checks(config, frame, as_of)
+
 
     run_name = run_id or f"crypto-bottom-score-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / run_name)
@@ -693,19 +788,7 @@ def run_crypto_bottom_score(
         "optional_sources_loaded": optional_sources,
         "optional_feature_columns_present": [
             column
-            for column in [
-                "etf_net_flow_usd",
-                "funding_rate_mean",
-                "CapMVRVCur",
-                "FlowInExUSD",
-                "FlowOutExUSD",
-                "fear_greed_value",
-                "macro_nasdaq",
-                "macro_us10y",
-                "macro_dollar",
-                "macro_fed_liquidity",
-                "macro_vix",
-            ]
+            for column in _SIGNAL_COLUMNS
             if column in frame.columns
         ],
         "latest": {
@@ -721,6 +804,9 @@ def run_crypto_bottom_score(
         "levels": levels,
         "component_snapshot": component_snapshot,
         "model_note": "Probability recent low holds inside horizon/tolerance; not a guarantee of no lower print.",
+        "data_quality": data_quality,
+        "reliability_rating": data_quality["reliability_rating"],
+        "reliability_note": data_quality["reliability_note"],
     }
 
     grid.to_csv(run_dir / "bottom_probability_grid.csv", index=False)

@@ -79,6 +79,20 @@ class CryptoSourceConfig:
             "VIXCLS": "vix",
         }
     )
+    optional_sources: dict[str, dict[str, Any]] = field(
+        default_factory=lambda: {
+            "coinmetrics": {"enabled": True, "env_var": "COINMETRICS_API_KEY", "required": False},
+            "fear_greed": {"enabled": True, "env_var": "", "required": False},
+            "macro": {"enabled": True, "env_var": "", "required": False},
+            "funding_rates": {"enabled": True, "env_var": "", "required": False},
+            "btc_etf_flows": {"enabled": True, "env_var": "", "required": False},
+            "open_interest": {"enabled": True, "env_var": "BINANCE_API_KEY", "required": False},
+            "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
+            "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
+            "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
+        }
+    )
+
 
 
 @dataclass

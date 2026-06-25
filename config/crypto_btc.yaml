@@ -29,6 +29,44 @@ sources:
     DTWEXBGS: dollar
     WALCL: fed_liquidity
     VIXCLS: vix
+  optional_sources:
+    coinmetrics:
+      enabled: true
+      env_var: COINMETRICS_API_KEY
+      required: false
+    fear_greed:
+      enabled: true
+      env_var: ""
+      required: false
+    macro:
+      enabled: true
+      env_var: ""
+      required: false
+    funding_rates:
+      enabled: true
+      env_var: ""
+      required: false
+    btc_etf_flows:
+      enabled: true
+      env_var: ""
+      required: false
+    open_interest:
+      enabled: true
+      env_var: BINANCE_API_KEY
+      required: false
+    coinbase_premium:
+      enabled: true
+      env_var: COINBASE_API_KEY
+      required: false
+    stablecoin_supply:
+      enabled: true
+      env_var: DEFILLAMA_API_KEY
+      required: false
+    options_skew:
+      enabled: true
+      env_var: DERIBIT_API_KEY
+      required: false
+
 
 backtest:
   initial_cash: 100000.0

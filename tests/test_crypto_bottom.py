@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from egx_research.crypto_bottom import _add_market_indicators, _component_scores
+from egx_research.crypto_bottom import (
+    _add_market_indicators,
+    _component_scores,
+    _merge_optional_sources,
+)
+from egx_research.crypto_config import CryptoConfig
 
 
 def test_add_market_indicators_derivation() -> None:
@@ -107,3 +112,31 @@ def test_component_scores_derivation() -> None:
     # but the mean calculation in onchain should still succeed because it ignores NaN.
     assert not scores["onchain"].isna().any()
 
+
+def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    (tmp_path / "raw").mkdir(parents=True, exist_ok=True)
+
+    frame = pd.DataFrame(
+        {
+            "date": pd.date_range("2025-01-01", periods=3, freq="D"),
+            "open_interest": [100.0, 110.0, 120.0],
+            "coinbase_premium": [0.001, 0.002, 0.003],
+            "stablecoin_supply": [1000.0, 1010.0, 1020.0],
+            "options_skew": [-0.1, -0.2, -0.3],
+            "put_call_ratio": [0.9, 0.8, 0.7],
+        }
+    )
+
+    merged, loaded = _merge_optional_sources(frame, config)
+
+    assert "feature:derivatives_open_interest" in loaded
+    assert "feature:spot_coinbase_premium" in loaded
+    assert "feature:liquidity_stablecoin_supply" in loaded
+    assert "feature:options_options_skew" in loaded
+    assert merged["derivatives_open_interest"].equals(merged["open_interest"])
+    assert merged["spot_coinbase_premium"].equals(merged["coinbase_premium"])
+    assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
+    assert merged["options_options_skew"].equals(merged["options_skew"])
+    assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])

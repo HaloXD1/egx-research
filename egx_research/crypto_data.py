@@ -11,6 +11,13 @@ import requests
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.utils import ensure_dir, write_json
+from egx_research.crypto_sources import (
+    is_source_enabled,
+    is_source_required,
+    get_source_api_key,
+    SOURCE_REGISTRY,
+)
+
 
 
 BINANCE_KLINE_COLUMNS = [
@@ -27,6 +34,22 @@ BINANCE_KLINE_COLUMNS = [
     "taker_buy_quote_volume",
     "ignore",
 ]
+
+OPTIONAL_FEATURE_PREFIXES = {
+    "open_interest.csv": "derivatives",
+    "coinbase_premium.csv": "spot",
+    "stablecoin_supply.csv": "liquidity",
+    "options_skew.csv": "options",
+}
+
+OPTIONAL_CANONICAL_COLUMNS = {
+    "open_interest.csv": {"derivatives_open_interest", "derivatives_open_interest_value"},
+    "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
+    "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
+    "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
+}
+
+CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
 
 
 def _date_to_ms(value: str | pd.Timestamp | datetime) -> int:
@@ -531,6 +554,31 @@ def _write_csv(path: Path, frame: pd.DataFrame) -> None:
     frame.to_csv(path, index=False)
 
 
+def _canonical_optional_columns(path: Path, frame: pd.DataFrame) -> pd.DataFrame:
+    prefix = OPTIONAL_FEATURE_PREFIXES.get(path.name)
+    if prefix is None:
+        return frame
+    canonical_columns = OPTIONAL_CANONICAL_COLUMNS.get(path.name, set())
+    return frame.rename(
+        columns={
+            column: f"{prefix}_{column}"
+            for column in frame.columns
+            if column != "date" and column not in canonical_columns
+        }
+    )
+
+
+def _should_keep_current_snapshot(panel: pd.DataFrame, column: str) -> bool:
+    if column not in CURRENT_SNAPSHOT_COLUMNS:
+        return False
+    non_null = panel[column].notna()
+    if int(non_null.sum()) != 1:
+        return False
+    latest_date = pd.Timestamp(panel["date"].max())
+    latest_value = panel.loc[pd.to_datetime(panel["date"]) == latest_date, column]
+    return bool(latest_value.notna().any())
+
+
 def load_crypto_price_data(config: CryptoConfig) -> pd.DataFrame:
     frame = pd.read_csv(config.data.normalized_path, parse_dates=["date"])
     return frame.sort_values("date").reset_index(drop=True)
@@ -557,6 +605,7 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         if not path.exists():
             continue
         frame = pd.read_csv(path, parse_dates=["date"])
+        frame = _canonical_optional_columns(path, frame)
         panel = panel.merge(frame, on="date", how="left")
 
     macro_columns = [column for column in panel.columns if column.startswith("macro_")]
@@ -566,7 +615,9 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
     base_columns = {"date", "open", "high", "low", "close", "volume", "quote_volume", "trade_count"}
     external_columns = [column for column in panel.columns if column not in base_columns]
     for column in external_columns:
-        if column == "fear_greed_classification":
+        if _should_keep_current_snapshot(panel, column):
+            panel[column] = pd.to_numeric(panel[column], errors="coerce")
+        elif column == "fear_greed_classification":
             panel[column] = panel[column].shift(1)
         else:
             panel[column] = pd.to_numeric(panel[column], errors="coerce").shift(1)
@@ -611,6 +662,49 @@ def _write_feature_quality(config: CryptoConfig, panel: pd.DataFrame, optional_f
     )
 
 
+def _sync_optional_source(
+    name: str,
+    fetch_fn: Any,
+    config: CryptoConfig,
+    raw_dir: Path,
+    filename: str,
+    summary: dict[str, Any],
+) -> None:
+    source_statuses = summary.setdefault("source_statuses", {})
+    if not is_source_enabled(config, name):
+        source_statuses[name] = "disabled"
+        return
+
+    meta = SOURCE_REGISTRY[name]
+    env_var = meta["env_var"]
+    if env_var and not get_source_api_key(name, env_var):
+        if is_source_required(config, name):
+            raise ValueError(f"Missing credentials for required source '{name}'")
+        source_statuses[name] = "missing_credentials"
+        return
+
+    try:
+        if name == "coinmetrics":
+            data, cm_summary = fetch_fn(config)
+            summary["coinmetrics"] = cm_summary
+        else:
+            data = fetch_fn(config)
+        _write_csv(raw_dir / filename, data)
+        if name == "funding_rates":
+            rows_key = "funding_rows"
+        elif name == "btc_etf_flows":
+            rows_key = "btc_etf_flow_rows"
+        else:
+            rows_key = f"{name}_rows"
+        summary[rows_key] = int(len(data))
+        source_statuses[name] = "success"
+    except Exception as exc:
+        if is_source_required(config, name):
+            raise
+        source_statuses[name] = "failed"
+        summary["errors"].append({"source": name, "error": str(exc)})
+
+
 def sync_crypto_data(config: CryptoConfig) -> Path:
     raw_dir = ensure_dir(config.data.raw_dir)
     normalized_dir = ensure_dir(config.data.normalized_dir)
@@ -622,71 +716,20 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     normalized = price[["date", "open", "high", "low", "close", "volume"]].copy()
     _write_csv(normalized_dir / config.data.normalized_filename, normalized)
     summary["price_rows"] = int(len(normalized))
+    summary.setdefault("source_statuses", {})["binance"] = "success"
 
-    try:
-        coinmetrics, coinmetrics_summary = fetch_coinmetrics(config)
-        _write_csv(raw_dir / "coinmetrics_btc.csv", coinmetrics)
-        summary["coinmetrics"] = coinmetrics_summary
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "coinmetrics", "error": str(exc)})
-
-    try:
-        fear_greed = fetch_fear_greed(config)
-        _write_csv(raw_dir / "fear_greed.csv", fear_greed)
-        summary["fear_greed_rows"] = int(len(fear_greed))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "fear_greed", "error": str(exc)})
-
-    try:
-        macro = fetch_macro(config)
-        _write_csv(raw_dir / "macro_fred.csv", macro)
-        summary["macro_rows"] = int(len(macro))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "macro", "error": str(exc)})
-
-    try:
-        funding = fetch_funding_rates(config)
-        _write_csv(raw_dir / "funding_rates.csv", funding)
-        summary["funding_rows"] = int(len(funding))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "funding", "error": str(exc)})
-
-    try:
-        etf_flows = fetch_btc_etf_flows(config)
-        _write_csv(raw_dir / "btc_etf_flows.csv", etf_flows)
-        summary["btc_etf_flow_rows"] = int(len(etf_flows))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "btc_etf_flows", "error": str(exc)})
-
-    try:
-        open_interest = fetch_open_interest(config)
-        _write_csv(raw_dir / "open_interest.csv", open_interest)
-        summary["open_interest_rows"] = int(len(open_interest))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "open_interest", "error": str(exc)})
-
-    try:
-        coinbase_premium = fetch_coinbase_premium(config)
-        _write_csv(raw_dir / "coinbase_premium.csv", coinbase_premium)
-        summary["coinbase_premium_rows"] = int(len(coinbase_premium))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "coinbase_premium", "error": str(exc)})
-
-    try:
-        stablecoin_supply = fetch_stablecoin_supply(config)
-        _write_csv(raw_dir / "stablecoin_supply.csv", stablecoin_supply)
-        summary["stablecoin_supply_rows"] = int(len(stablecoin_supply))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "stablecoin_supply", "error": str(exc)})
-
-    try:
-        options_skew = fetch_deribit_options(config)
-        _write_csv(raw_dir / "options_skew.csv", options_skew)
-        summary["options_skew_rows"] = int(len(options_skew))
-    except Exception as exc:  # pragma: no cover - network defensive path
-        summary["errors"].append({"source": "options_skew", "error": str(exc)})
+    _sync_optional_source("coinmetrics", fetch_coinmetrics, config, raw_dir, "coinmetrics_btc.csv", summary)
+    _sync_optional_source("fear_greed", fetch_fear_greed, config, raw_dir, "fear_greed.csv", summary)
+    _sync_optional_source("macro", fetch_macro, config, raw_dir, "macro_fred.csv", summary)
+    _sync_optional_source("funding_rates", fetch_funding_rates, config, raw_dir, "funding_rates.csv", summary)
+    _sync_optional_source("btc_etf_flows", fetch_btc_etf_flows, config, raw_dir, "btc_etf_flows.csv", summary)
+    _sync_optional_source("open_interest", fetch_open_interest, config, raw_dir, "open_interest.csv", summary)
+    _sync_optional_source("coinbase_premium", fetch_coinbase_premium, config, raw_dir, "coinbase_premium.csv", summary)
+    _sync_optional_source("stablecoin_supply", fetch_stablecoin_supply, config, raw_dir, "stablecoin_supply.csv", summary)
+    _sync_optional_source("options_skew", fetch_deribit_options, config, raw_dir, "options_skew.csv", summary)
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))
     write_json(Path(config.data.features_dir) / "sync_summary.json", summary)
     return Path(config.data.features_path)
+
