@@ -122,6 +122,22 @@ SOURCE_REGISTRY = {
         "env_var": "DERIBIT_API_KEY",
         "critical": False,
     },
+    "exchange_flows": {
+        "provider": "CryptoQuant",
+        "category": "onchain",
+        "paid_free": "paid",
+        "freshness_sla_hours": 48,
+        "required_columns": [
+            "onchain_exchange_reserve_btc",
+            "onchain_exchange_netflow_btc",
+            "onchain_exchange_netflow_usd",
+            "onchain_whale_inflow_usd",
+            "onchain_realized_profit_loss_exchange",
+        ],
+        "filename": "exchange_flows.csv",
+        "env_var": "CRYPTOQUANT_API_KEY",
+        "critical": False,
+    },
 }
 
 

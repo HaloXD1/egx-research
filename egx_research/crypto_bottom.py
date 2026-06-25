@@ -70,6 +70,9 @@ _SIGNAL_COLUMNS = [
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
+    "onchain_exchange_reserve_btc", "onchain_exchange_netflow_btc",
+    "onchain_exchange_netflow_usd", "onchain_whale_inflow_usd",
+    "onchain_realized_profit_loss_exchange",
 ]
 
 _SIGNAL_ALIASES = {
@@ -106,6 +109,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
         "options_skew.csv": "options",
+        "exchange_flows.csv": "onchain",
     }
     for filename, prefix in optional_files.items():
         source = _load_optional_source(raw_dir, filename)
@@ -280,7 +284,50 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     mvrv_zscore = (mcap - rcap) / mcap.expanding(min_periods=30).std().replace(0.0, np.nan)
     zscore_cheapness = 1.0 - _scale_between(mvrv_zscore, 0.1, 5.0)
 
-    out["onchain"] = pd.concat([mvrv_cheap, mvrv_recovery, exchange_outflow, active_recovery, tx_recovery, zscore_cheapness], axis=1).mean(axis=1)
+    # New exchange flows indicators
+    reserve = _optional_column(frame, "onchain_exchange_reserve_btc")
+    reserve_change_90 = reserve.pct_change(90)
+    reserve_downtrend = _scale_between(-reserve_change_90, -0.01, 0.05)
+
+    netflow_btc = _optional_column(frame, "onchain_exchange_netflow_btc").fillna(
+        _optional_column(frame, "onchain_exchange_netflow_usd") / frame["close"].replace(0, np.nan)
+    )
+    rolling_outflow_14d_btc = (-netflow_btc).rolling(14, min_periods=5).mean()
+    net_outflow_cap = _scale_between(rolling_outflow_14d_btc, 100, 5000)
+
+    whale_inflow = _optional_column(frame, "onchain_whale_inflow_usd")
+    whale_ratio = whale_inflow / whale_inflow.rolling(30, min_periods=10).mean().replace(0, np.nan)
+    whale_inflow_score = 1.0 - _scale_between(whale_ratio, 1.2, 2.5)
+
+    realized_pl = _optional_column(frame, "onchain_realized_profit_loss_exchange")
+    pl_mean = realized_pl.rolling(90, min_periods=30).mean()
+    pl_std = realized_pl.rolling(90, min_periods=30).std().replace(0, np.nan)
+    pl_zscore = (realized_pl - pl_mean) / pl_std
+    realized_capitulation = _scale_between(-pl_zscore, 1.0, 2.5)
+
+    # Precedence logic: dedicated net_outflow_cap replaces legacy exchange_outflow if data is present
+    if net_outflow_cap.notna().any():
+        exchange_flow_final = net_outflow_cap
+    else:
+        exchange_flow_final = exchange_outflow
+
+    onchain_signals = [
+        mvrv_cheap,
+        mvrv_recovery,
+        exchange_flow_final,
+        active_recovery,
+        tx_recovery,
+        zscore_cheapness,
+    ]
+
+    if reserve_downtrend.notna().any():
+        onchain_signals.append(reserve_downtrend)
+    if whale_inflow_score.notna().any():
+        onchain_signals.append(whale_inflow_score)
+    if realized_capitulation.notna().any():
+        onchain_signals.append(realized_capitulation)
+
+    out["onchain"] = pd.concat(onchain_signals, axis=1).mean(axis=1)
 
     spot_signals: list[pd.Series] = []
     etf_flow = _optional_column(frame, "etf_net_flow_usd").fillna(_optional_column(frame, "etf_net_flow_btc") * frame["close"])

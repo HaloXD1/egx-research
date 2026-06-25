@@ -248,3 +248,74 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_exchange_flows_aliasing_and_validation() -> None:
+    from egx_research.crypto_data import rename_exchange_flows_columns, validate_exchange_flows
+    import pytest
+
+    # Test aliasing
+    raw_df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "exchange_reserve": [1500000.0, 1510000.0],
+        "netflow_usd": [-50000000.0, 20000000.0],
+        "whale_inflow": [10000000.0, 12000000.0],
+        "realized_pnl": [-15000000.0, 5000000.0]
+    })
+    renamed = rename_exchange_flows_columns(raw_df)
+    assert "onchain_exchange_reserve_btc" in renamed.columns
+    assert "onchain_exchange_netflow_usd" in renamed.columns
+    assert "onchain_whale_inflow_usd" in renamed.columns
+    assert "onchain_realized_profit_loss_exchange" in renamed.columns
+
+    # Test unit validation - normal values pass
+    validate_exchange_flows(renamed)
+
+    # Test reserve check: > 10M fails
+    bad_reserve = renamed.copy()
+    bad_reserve["onchain_exchange_reserve_btc"] = [11_000_000, 12_000_000]
+    with pytest.raises(ValueError, match="Exchange reserve contains values > 10,000,000"):
+        validate_exchange_flows(bad_reserve)
+
+    # Test reserve check: negative fails
+    negative_reserve = renamed.copy()
+    negative_reserve["onchain_exchange_reserve_btc"] = [-1000, 2000]
+    with pytest.raises(ValueError, match="Exchange reserve cannot be negative"):
+        validate_exchange_flows(negative_reserve)
+
+    # Test netflow check: absolute value > 500k fails
+    bad_netflow = renamed.copy()
+    bad_netflow["onchain_exchange_netflow_btc"] = [600_000, 0]
+    with pytest.raises(ValueError, match="Exchange netflow in BTC contains values with absolute value > 500,000"):
+        validate_exchange_flows(bad_netflow)
+
+    # Test date check: invalid date fails
+    bad_date = renamed.copy()
+    bad_date["date"] = ["invalid_date_string", "2024-01-02"]
+    with pytest.raises(ValueError, match="Exchange flows 'date' column contains invalid dates"):
+        validate_exchange_flows(bad_date)
+
+
+def test_fetch_exchange_flows_fallback_behavior(tmp_path) -> None:
+    from egx_research.crypto_data import fetch_exchange_flows
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+
+    # If no file exists, return empty DataFrame with canonical columns
+    res_empty = fetch_exchange_flows(config)
+    assert len(res_empty) == 0
+    assert "onchain_exchange_reserve_btc" in res_empty.columns
+
+    # Create dummy local file
+    df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "exchange_reserve_btc": [2000000.0, 2010000.0],
+        "onchain_exchange_netflow_btc": [-500.0, 1000.0]
+    })
+    df.to_csv(tmp_path / "exchange_flows.csv", index=False)
+
+    res = fetch_exchange_flows(config)
+    assert len(res) == 2
+    assert res.iloc[0]["onchain_exchange_reserve_btc"] == 2000000.0
+    assert res.iloc[0]["onchain_exchange_netflow_btc"] == -500.0
+

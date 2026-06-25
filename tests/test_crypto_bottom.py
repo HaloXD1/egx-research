@@ -138,5 +138,77 @@ def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
     assert merged["derivatives_open_interest"].equals(merged["open_interest"])
     assert merged["spot_coinbase_premium"].equals(merged["coinbase_premium"])
     assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
-    assert merged["options_options_skew"].equals(merged["options_skew"])
+    assert merged["options_skew"].equals(merged["options_skew"])
     assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])
+
+
+def test_exchange_flows_indicators_and_precedence() -> None:
+    # Create dummy data with indicators
+    rows = 100
+    idx = np.arange(rows)
+    close = 100.0 + idx * 0.5
+
+    frame = pd.DataFrame({
+        "date": pd.date_range("2025-01-01", periods=rows, freq="D"),
+        "open": close * 0.99,
+        "high": close * 1.01,
+        "low": close * 0.98,
+        "close": close,
+        "volume": 1000.0 + idx,
+        "CapMVRVCur": 1.5,
+        "SplyCur": 19000000.0,
+        # Legacy CoinMetrics inflow/outflow columns
+        "FlowInExUSD": [10.0] * rows,
+        "FlowOutExUSD": [10.0] * rows,
+        # New exchange flows columns
+        "onchain_exchange_reserve_btc": np.linspace(2000000.0, 1900000.0, rows), # downtrend
+        "onchain_exchange_netflow_btc": [-1000.0] * rows, # sustained outflow
+        "onchain_whale_inflow_usd": [100000.0] * rows,
+        "onchain_realized_profit_loss_exchange": [-500000.0] * rows, # realized loss
+    })
+
+    df = _add_market_indicators(frame)
+    for col in ["onchain_exchange_reserve_btc", "onchain_exchange_netflow_btc", 
+                "onchain_whale_inflow_usd", "onchain_realized_profit_loss_exchange",
+                "FlowInExUSD", "FlowOutExUSD", "CapMVRVCur", "SplyCur"]:
+        df[col] = frame[col]
+
+    scores = _component_scores(df)
+    assert "onchain" in scores.columns
+    assert scores["onchain"].between(0.0, 1.0).all()
+
+
+def test_exchange_flows_precedence_logic() -> None:
+    rows = 10
+    frame_no_new = pd.DataFrame({
+        "date": pd.date_range("2025-01-01", periods=rows, freq="D"),
+        "open": [100.0] * rows,
+        "high": [101.0] * rows,
+        "low": [99.0] * rows,
+        "close": [100.0] * rows,
+        "volume": [1000.0] * rows,
+        "CapMVRVCur": [1.5] * rows,
+        "SplyCur": [19000000.0] * rows,
+        "FlowOutExUSD": [50000.0] * rows,
+        "FlowInExUSD": [10000.0] * rows,
+    })
+    df_no_new = _add_market_indicators(frame_no_new)
+    df_no_new["FlowOutExUSD"] = frame_no_new["FlowOutExUSD"]
+    df_no_new["FlowInExUSD"] = frame_no_new["FlowInExUSD"]
+    df_no_new["CapMVRVCur"] = frame_no_new["CapMVRVCur"]
+    df_no_new["SplyCur"] = frame_no_new["SplyCur"]
+    
+    scores_no_new = _component_scores(df_no_new)
+    
+    frame_with_new = frame_no_new.copy()
+    frame_with_new["onchain_exchange_netflow_btc"] = [-2000.0] * rows
+    df_with_new = _add_market_indicators(frame_with_new)
+    df_with_new["FlowOutExUSD"] = frame_with_new["FlowOutExUSD"]
+    df_with_new["FlowInExUSD"] = frame_with_new["FlowInExUSD"]
+    df_with_new["CapMVRVCur"] = frame_with_new["CapMVRVCur"]
+    df_with_new["SplyCur"] = frame_with_new["SplyCur"]
+    df_with_new["onchain_exchange_netflow_btc"] = frame_with_new["onchain_exchange_netflow_btc"]
+    
+    scores_with_new = _component_scores(df_with_new)
+    
+    assert not scores_no_new["onchain"].equals(scores_with_new["onchain"])

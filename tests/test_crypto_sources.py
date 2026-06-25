@@ -306,3 +306,13 @@ def test_bottom_score_integration_does_not_affect_math(tmp_path) -> None:
     # but the value should not be affected by the reliability_score.
     best_row = res.summary["best_case"]
     assert best_row["confidence_pct"] == pytest.approx(best_row["confidence"] * 100)
+
+
+def test_exchange_flows_registry() -> None:
+    assert "exchange_flows" in SOURCE_REGISTRY
+    meta = SOURCE_REGISTRY["exchange_flows"]
+    assert meta["provider"] == "CryptoQuant"
+    assert meta["category"] == "onchain"
+    assert meta["critical"] is False
+    assert "onchain_exchange_reserve_btc" in meta["required_columns"]
+

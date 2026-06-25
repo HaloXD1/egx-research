@@ -90,6 +90,7 @@ class CryptoSourceConfig:
             "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
             "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
+            "exchange_flows": {"enabled": True, "env_var": "CRYPTOQUANT_API_KEY", "required": False},
         }
     )
 
