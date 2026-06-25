@@ -16,6 +16,28 @@ egx crypto-bottom-score --config config/crypto_btc.yaml --require-source coinmet
 egx crypto-bottom-score --config config/crypto_btc.yaml --no-html
 ```
 
+## Default Free/Public Source Profile
+
+The default BTC config uses free/public sources first:
+
+- Binance spot/futures market data
+- Deribit public options proxy/DVOL data
+- Coinbase public market data
+- Coin Metrics Community API
+- DefiLlama public stablecoin supply endpoint
+- Alternative.me fear/greed
+- FRED macro CSVs
+- Farside ETF table when reachable
+
+Expensive paid API sources are disabled by default:
+
+- CoinGlass liquidations
+- CryptoQuant exchange flows
+- CryptoQuant exchange stablecoin reserves
+- Glassnode STH/SOPR
+
+They can still be used through local CSV exports or by explicitly enabling them in `config/crypto_btc.yaml`.
+
 ## Local CSV Fallbacks
 
 Optional paid/API sources are never required for sync. If credentials are absent or a fetch fails, the workflow uses local CSV files under `data/crypto/raw/` when present, otherwise marks the source as missing/optional.
@@ -35,13 +57,14 @@ All optional rows must have a `date` column. Feature columns are lagged by one d
 
 ## Env Vars
 
-- `DERIBIT_API_KEY`
-- `COINGLASS_API_KEY`
-- `CRYPTOQUANT_API_KEY`
-- `GLASSNODE_API_KEY`
-- `COINMETRICS_API_KEY`
-- `COINBASE_API_KEY`
-- `DEFILLAMA_API_KEY`
+Usually not needed for the default free/public profile.
+
+Optional keys if you intentionally enable paid or higher-limit sources:
+
+- `DERIBIT_API_KEY` for historical/private options data
+- `COINGLASS_API_KEY` for CoinGlass liquidations
+- `CRYPTOQUANT_API_KEY` for CryptoQuant exchange/on-chain exports
+- `GLASSNODE_API_KEY` for Glassnode STH/SOPR metrics
 - `EXCHANGE_STABLECOIN_RESERVES_API_KEY`
 
 ## Outputs

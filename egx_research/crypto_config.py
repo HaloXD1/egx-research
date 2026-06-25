@@ -83,20 +83,20 @@ class CryptoSourceConfig:
     )
     optional_sources: dict[str, dict[str, Any]] = field(
         default_factory=lambda: {
-            "coinmetrics": {"enabled": True, "env_var": "COINMETRICS_API_KEY", "required": False},
+            "coinmetrics": {"enabled": True, "env_var": "", "required": False},
             "fear_greed": {"enabled": True, "env_var": "", "required": False},
             "macro": {"enabled": True, "env_var": "", "required": False},
             "funding_rates": {"enabled": True, "env_var": "", "required": False},
             "btc_etf_flows": {"enabled": True, "env_var": "", "required": False},
-            "open_interest": {"enabled": True, "env_var": "BINANCE_API_KEY", "required": False},
+            "open_interest": {"enabled": True, "env_var": "", "required": False},
             "futures_positioning": {"enabled": True, "env_var": "", "required": False},
-            "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
-            "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
-            "exchange_stablecoin_reserves": {"enabled": True, "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY", "required": False},
+            "coinbase_premium": {"enabled": True, "env_var": "", "required": False},
+            "stablecoin_supply": {"enabled": True, "env_var": "", "required": False},
+            "exchange_stablecoin_reserves": {"enabled": False, "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY", "required": False},
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
-            "liquidations": {"enabled": True, "env_var": "COINGLASS_API_KEY", "required": False},
-            "exchange_flows": {"enabled": True, "env_var": "CRYPTOQUANT_API_KEY", "required": False},
-            "glassnode_sth_sopr": {"enabled": True, "env_var": "GLASSNODE_API_KEY", "required": False},
+            "liquidations": {"enabled": False, "env_var": "COINGLASS_API_KEY", "required": False},
+            "exchange_flows": {"enabled": False, "env_var": "CRYPTOQUANT_API_KEY", "required": False},
+            "glassnode_sth_sopr": {"enabled": False, "env_var": "GLASSNODE_API_KEY", "required": False},
         }
     )
 
