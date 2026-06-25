@@ -574,9 +574,29 @@ def parse_glassnode_payload(payload: list[dict[str, Any]], column_name: str) -> 
 
 def fetch_glassnode_sth_sopr(config: CryptoConfig) -> pd.DataFrame:
     """Fetch Glassnode on-chain STH/SOPR data for BTC."""
+    columns = [
+        "date",
+        "onchain_sth_realized_price",
+        "onchain_sth_mvrv",
+        "onchain_sth_sopr",
+        "onchain_sopr",
+        "onchain_realized_loss_usd",
+        "onchain_realized_profit_usd",
+    ]
+    fallback_path = Path(config.data.raw_dir) / "glassnode_sth_sopr.csv"
+
+    def load_local_fallback() -> pd.DataFrame:
+        if not fallback_path.exists():
+            return pd.DataFrame(columns=columns)
+        frame = pd.read_csv(fallback_path, parse_dates=["date"])
+        for column in columns:
+            if column not in frame.columns:
+                frame[column] = np.nan
+        return frame[columns].sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
     api_key = get_source_api_key("glassnode_sth_sopr", get_source_env_var(config, "glassnode_sth_sopr"))
     if not api_key:
-        raise ValueError("Missing GLASSNODE_API_KEY for Glassnode API fetch.")
+        return load_local_fallback()
 
     base_url = getattr(config.sources, "glassnode_base_url", "https://api.glassnode.com").rstrip("/")
     start_time = int(pd.Timestamp(config.sources.onchain_start).timestamp())
@@ -606,10 +626,10 @@ def fetch_glassnode_sth_sopr(config: CryptoConfig) -> pd.DataFrame:
             df = parse_glassnode_payload(payload, col)
             frames.append(df)
         except Exception:
-            pass
+            continue
             
     if not frames:
-        return pd.DataFrame(columns=["date"])
+        return load_local_fallback()
         
     merged = frames[0]
     for frame in frames[1:]:
@@ -757,7 +777,6 @@ def _sync_optional_source(
             summary["coinmetrics"] = cm_summary
         else:
             data = fetch_fn(config)
-        _write_csv(raw_dir / filename, data)
         if name == "funding_rates":
             rows_key = "funding_rows"
         elif name == "btc_etf_flows":
@@ -765,7 +784,11 @@ def _sync_optional_source(
         else:
             rows_key = f"{name}_rows"
         summary[rows_key] = int(len(data))
-        source_statuses[name] = "success"
+        if len(data) == 0 and not SOURCE_REGISTRY.get(name, {}).get("critical", False):
+            source_statuses[name] = "missing_optional"
+        else:
+            _write_csv(raw_dir / filename, data)
+            source_statuses[name] = "success"
     except Exception as exc:
         if is_source_required(config, name):
             raise

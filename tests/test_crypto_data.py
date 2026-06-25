@@ -304,9 +304,27 @@ def test_fetch_glassnode_sth_sopr(monkeypatch) -> None:
     assert row["onchain_realized_profit_usd"] == 1200000.0
 
 
-def test_fetch_glassnode_sth_sopr_missing_credentials(monkeypatch) -> None:
+def test_fetch_glassnode_sth_sopr_missing_credentials_returns_empty(monkeypatch, tmp_path) -> None:
     config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
     monkeypatch.delenv("GLASSNODE_API_KEY", raising=False)
-    with pytest.raises(ValueError, match="Missing GLASSNODE_API_KEY"):
-        fetch_glassnode_sth_sopr(config)
+    frame = fetch_glassnode_sth_sopr(config)
+    assert frame.empty
+    assert "onchain_sth_mvrv" in frame.columns
 
+
+def test_fetch_glassnode_sth_sopr_local_fallback(monkeypatch, tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("GLASSNODE_API_KEY", raising=False)
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-01")],
+            "onchain_sth_mvrv": [0.92],
+            "onchain_sth_sopr": [0.98],
+        }
+    ).to_csv(tmp_path / "glassnode_sth_sopr.csv", index=False)
+
+    frame = fetch_glassnode_sth_sopr(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["onchain_sth_mvrv"] == 0.92
