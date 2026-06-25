@@ -140,3 +140,81 @@ def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
     assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
     assert merged["options_options_skew"].equals(merged["options_skew"])
     assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])
+
+
+def test_bottom_score_with_exchange_reserves_and_dry_powder_ratio(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    (tmp_path / "raw").mkdir(parents=True, exist_ok=True)
+
+    rows = 120
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+
+    # Write dummy exchange_stablecoin_reserves.csv
+    pd.DataFrame({
+        "date": dates,
+        "exchange_stablecoin_reserves": np.linspace(100_000_000.0, 150_000_000.0, rows)
+    }).to_csv(tmp_path / "raw" / "exchange_stablecoin_reserves.csv", index=False)
+
+    pd.DataFrame({
+        "date": dates,
+        "stablecoin_supply": np.linspace(150_000_000.0, 220_000_000.0, rows)
+    }).to_csv(tmp_path / "raw" / "stablecoin_supply.csv", index=False)
+
+    base_frame = pd.DataFrame({
+        "date": dates,
+        "open": [100.0] * rows,
+        "high": [105.0] * rows,
+        "low": [95.0] * rows,
+        "close": [100.0] * rows,
+        "volume": [1000.0] * rows,
+        "SplyCur": [19500000.0] * rows
+    })
+
+    merged, loaded = _merge_optional_sources(base_frame, config)
+    
+    assert "exchange_stablecoin_reserves.csv" in loaded
+    assert "stablecoin_supply.csv" in loaded
+    assert "liquidity_exchange_stablecoin_reserves" in merged.columns
+    assert "liquidity_stablecoin_supply" in merged.columns
+    assert "liquidity_dry_powder_ratio" in merged.columns
+
+    # Verify dry powder ratio is computed correctly:
+    # liquidity_dry_powder_ratio = stable_supply_shifted / (close_shifted * SplyCur_shifted)
+    # Check index 2 (2025-01-03):
+    # shifted values (shifted by 1 in _merge_optional_sources):
+    # stable_supply_shifted = stable_supply[1] = 1020.0
+    # SplyCur_shifted = SplyCur[1] = 19500000.0
+    # prev_close = close[1] = 100.0
+    # ratio = 1020.0 / (100.0 * 19500000.0) = 1020.0 / 1950000000.0 = 5.230769e-7
+    expected_ratio = (150_000_000.0 + (220_000_000.0 - 150_000_000.0) / (rows - 1)) / (100.0 * 19500000.0)
+    assert pytest.approx(merged["liquidity_dry_powder_ratio"].iloc[2], rel=1e-5) == expected_ratio
+
+    # Run component scores
+    from egx_research.crypto_bottom import _component_scores
+    # To run _component_scores we need to add other indicators
+    from egx_research.crypto_bottom import _add_market_indicators
+    indicators_df = _add_market_indicators(merged)
+    
+    # Fill any indicators needed by other components so they don't NaN out
+    indicators_df["CapMVRVCur"] = 1.5
+    indicators_df["fear_greed_value"] = 50.0
+
+    scores = _component_scores(indicators_df)
+    assert "spot_demand" in scores.columns
+    assert "macro" in scores.columns
+    assert pd.notna(scores["spot_demand"].iloc[-1])
+    assert pd.notna(scores["macro"].iloc[-1])
+
+    # Dry powder score improvement test:
+    # If we double the stablecoin supply, the dry powder ratio doubles, which should increase macro score
+    # since dry_powder_ratio increases and macro contains scaled dry powder.
+    high_stable_frame = indicators_df.copy()
+    high_stable_frame["liquidity_dry_powder_ratio"] = high_stable_frame["liquidity_dry_powder_ratio"] * 10
+    scores_high = _component_scores(high_stable_frame)
+    
+    # Check that high dry powder yields a higher or equal macro score at indices where it's valid
+    # Since dry_powder_ratio scales up, _scale_between(dry_powder, 0.05, 0.20) will increase
+    # (or stay capped at 1.0)
+    assert scores_high["macro"].iloc[-1] >= scores["macro"].iloc[-1]
+

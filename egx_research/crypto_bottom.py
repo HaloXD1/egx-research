@@ -67,7 +67,8 @@ _SIGNAL_COLUMNS = [
     "funding_rate_mean", "derivatives_open_interest", "derivatives_liquidations_long_usd",
     "CapMVRVCur", "FlowInExUSD", "FlowOutExUSD", "AdrActCnt", "TxCnt",
     "etf_net_flow_usd", "etf_net_flow_btc", "spot_coinbase_premium",
-    "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
+    "liquidity_stablecoin_supply", "liquidity_exchange_stablecoin_reserves", "liquidity_dry_powder_ratio",
+    "options_options_skew", "options_put_call_ratio",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
 ]
@@ -78,6 +79,8 @@ _SIGNAL_ALIASES = {
     "spot_coinbase_close": "coinbase_close",
     "spot_coinbase_premium": "coinbase_premium",
     "liquidity_stablecoin_supply": "stablecoin_supply",
+    "liquidity_exchange_stablecoin_reserves": "exchange_stablecoin_reserves",
+    "liquidity_dry_powder_ratio": "dry_powder_ratio",
     "options_options_skew": "options_skew",
     "options_put_call_ratio": "put_call_ratio",
     "options_dvol": "dvol",
@@ -105,6 +108,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         "open_interest.csv": "derivatives",
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
+        "exchange_stablecoin_reserves.csv": "liquidity",
         "options_skew.csv": "options",
     }
     for filename, prefix in optional_files.items():
@@ -131,6 +135,17 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         panel[column] = _safe_numeric(panel[column]).shift(1)
 
     panel = _apply_signal_aliases(panel)
+
+    # Compute lag-safe dry powder ratio after shifting loop
+    if "liquidity_dry_powder_ratio" not in panel.columns:
+        stable_col = "liquidity_stablecoin_supply"
+        if stable_col in panel.columns and "close" in panel.columns and panel[stable_col].notna().any():
+            sply_col = "SplyCur" if "SplyCur" in panel.columns else ("onchain_SplyCur" if "onchain_SplyCur" in panel.columns else None)
+            sply = panel[sply_col] if sply_col else pd.Series(19500000.0, index=panel.index)
+            sply = sply.fillna(19500000.0).replace(0, 19500000.0)
+            prev_close = panel["close"].shift(1)
+            btc_mcap_lagged = prev_close * sply
+            panel["liquidity_dry_powder_ratio"] = panel[stable_col] / btc_mcap_lagged.replace(0, np.nan)
 
     # Report columns that actually have data (including those already in features)
     active = [col for col in _SIGNAL_COLUMNS if col in panel.columns and panel[col].notna().any()]
@@ -296,6 +311,10 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     stable_supply = _optional_column(frame, "liquidity_stablecoin_supply")
     if stable_supply.notna().sum() > 30:
         spot_signals.append(_scale_between(stable_supply.pct_change(30), -0.02, 0.08))
+        spot_signals.append(_scale_between(stable_supply.pct_change(90), -0.05, 0.15))
+    exchange_reserves = _optional_column(frame, "liquidity_exchange_stablecoin_reserves")
+    if exchange_reserves.notna().sum() > 30:
+        spot_signals.append(_scale_between(exchange_reserves.pct_change(30), -0.05, 0.15))
     # Volume ratio: crypto trades 24/7 but weekends are naturally lower; 0.6 floor
     spot_signals.append(_scale_between(frame["volume_ratio_20"], 0.6, 2.0))
     out["spot_demand"] = pd.concat(spot_signals, axis=1).mean(axis=1) if spot_signals else pd.Series(0.5, index=frame.index)
@@ -310,7 +329,19 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     yield_tailwind = _scale_between(-(us10y - us10y.shift(20)), -0.25, 0.60)
     vix_cooling = _scale_between(-(vix - vix.shift(20)) / vix.shift(20).replace(0, np.nan), -0.10, 0.35)
     liquidity = _scale_between(fed_liq.pct_change(60), -0.03, 0.06)
-    out["macro"] = pd.concat([macro_risk, dollar_tailwind, yield_tailwind, vix_cooling, liquidity], axis=1).mean(axis=1)
+
+    macro_signals = [macro_risk, dollar_tailwind, yield_tailwind, vix_cooling, liquidity]
+    dry_powder = _optional_column(frame, "liquidity_dry_powder_ratio")
+    if dry_powder.notna().sum() > 30:
+        macro_signals.append(_scale_between(dry_powder, 0.05, 0.20))
+    elif stable_supply is not None and stable_supply.notna().sum() > 30:
+        sply = _optional_column(frame, "SplyCur").fillna(19500000.0)
+        prev_close = frame["close"].shift(1)
+        btc_mcap_lagged = prev_close * sply
+        dry_powder_calc = stable_supply / btc_mcap_lagged.replace(0, np.nan)
+        macro_signals.append(_scale_between(dry_powder_calc, 0.05, 0.20))
+
+    out["macro"] = pd.concat(macro_signals, axis=1).mean(axis=1)
 
     # Derived NUPL signal
     nupl = 1.0 - 1.0 / mvrv.replace(0.0, np.nan)

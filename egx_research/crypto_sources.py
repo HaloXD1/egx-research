@@ -112,6 +112,16 @@ SOURCE_REGISTRY = {
         "env_var": "DEFILLAMA_API_KEY",
         "critical": False,
     },
+    "exchange_stablecoin_reserves": {
+        "provider": "CryptoQuant",
+        "category": "liquidity",
+        "paid_free": "free",
+        "freshness_sla_hours": 48,
+        "required_columns": ["liquidity_exchange_stablecoin_reserves"],
+        "filename": "exchange_stablecoin_reserves.csv",
+        "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY",
+        "critical": False,
+    },
     "options_skew": {
         "provider": "Deribit",
         "category": "options",

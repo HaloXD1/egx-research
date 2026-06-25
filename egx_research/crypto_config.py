@@ -89,6 +89,7 @@ class CryptoSourceConfig:
             "open_interest": {"enabled": True, "env_var": "BINANCE_API_KEY", "required": False},
             "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
             "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
+            "exchange_stablecoin_reserves": {"enabled": True, "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY", "required": False},
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
         }
     )

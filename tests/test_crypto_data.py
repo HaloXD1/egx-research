@@ -16,6 +16,7 @@ from egx_research.crypto_data import (
     fetch_coinbase_premium,
     fetch_stablecoin_supply,
     fetch_deribit_options,
+    fetch_exchange_stablecoin_reserves,
 )
 
 
@@ -248,3 +249,65 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_fetch_stablecoin_supply_hardening(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # 1. DefiLlama failure, no cache -> returns empty dataframe gracefully
+    def mock_get_json_fail(url, params=None):
+        raise ValueError("Simulated network failure")
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json_fail)
+    
+    df = fetch_stablecoin_supply(config)
+    assert df.empty
+    assert list(df.columns) == ["date", "stablecoin_supply"]
+    
+    # 2. DefiLlama failure, cache exists -> returns cache
+    cache_df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "stablecoin_supply": [100.0, 101.0]
+    })
+    cache_df.to_csv(tmp_path / "stablecoin_supply.csv", index=False)
+    
+    df = fetch_stablecoin_supply(config)
+    assert not df.empty
+    assert len(df) == 2
+    assert df.iloc[1]["stablecoin_supply"] == 101.0
+    assert df.iloc[1]["date"] == pd.Timestamp("2024-01-02")
+
+
+def test_fetch_exchange_stablecoin_reserves_csv_fallback(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # Mock API fail/missing
+    monkeypatch.setenv("EXCHANGE_STABLECOIN_RESERVES_API_KEY", "")
+    monkeypatch.setenv("CRYPTOQUANT_API_KEY", "")
+    
+    # Cache exists
+    cache_df = pd.DataFrame({
+        "date": ["2024-01-01", "2024-01-02"],
+        "exchange_stablecoin_reserves": [50.0, 52.0]
+    })
+    cache_df.to_csv(tmp_path / "exchange_stablecoin_reserves.csv", index=False)
+    
+    df = fetch_exchange_stablecoin_reserves(config)
+    assert not df.empty
+    assert len(df) == 2
+    assert df.iloc[1]["exchange_stablecoin_reserves"] == 52.0
+
+
+def test_fetch_exchange_stablecoin_reserves_missing_graceful(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    
+    # Mock API fail/missing and no CSV file
+    monkeypatch.setenv("EXCHANGE_STABLECOIN_RESERVES_API_KEY", "")
+    monkeypatch.setenv("CRYPTOQUANT_API_KEY", "")
+    
+    df = fetch_exchange_stablecoin_reserves(config)
+    assert df.empty
+    assert list(df.columns) == ["date", "exchange_stablecoin_reserves"]
+
