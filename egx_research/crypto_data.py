@@ -48,7 +48,16 @@ OPTIONAL_CANONICAL_COLUMNS = {
     "open_interest.csv": {"derivatives_open_interest", "derivatives_open_interest_value"},
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
-    "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
+    "options_skew.csv": {
+        "options_options_skew",
+        "options_put_call_ratio",
+        "options_dvol",
+        "options_25d_skew",
+        "options_put_call_oi",
+        "options_put_call_volume",
+        "options_iv_30d",
+        "options_term_structure",
+    },
 }
 
 CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
@@ -165,8 +174,8 @@ def parse_funding_payload(payload: list[dict[str, Any]]) -> pd.DataFrame:
     return daily.sort_values("date").reset_index(drop=True)
 
 
-def _get_json(url: str, params: dict[str, Any] | None = None) -> Any:
-    response = requests.get(url, params=params, timeout=30)
+def _get_json(url: str, params: dict[str, Any] | None = None, headers: dict[str, str] | None = None) -> Any:
+    response = requests.get(url, params=params, headers=headers, timeout=30)
     response.raise_for_status()
     return response.json()
 
@@ -478,7 +487,37 @@ def fetch_stablecoin_supply(config: CryptoConfig) -> pd.DataFrame:
 
 
 def fetch_deribit_options(config: CryptoConfig) -> pd.DataFrame:
-    """Fetch daily put/call ratio snapshot and DVOL history from Deribit."""
+    """Fetch daily options data. Falls back to limited DVOL/snapshot if no credentials present."""
+    from egx_research.crypto_sources import get_source_env_var, get_source_api_key
+    env_var = get_source_env_var(config, "options_skew")
+    api_key = get_source_api_key("options_skew", env_var)
+
+    if api_key:
+        url = getattr(config.sources, "historical_options_url", "https://www.deribit.com/api/v2/private/get_historical_options")
+        try:
+            payload = _get_json(url, {"currency": "BTC"}, headers={"Authorization": f"Bearer {api_key}"})
+            if payload and "result" in payload:
+                rows = []
+                for entry in payload["result"]:
+                    rows.append({
+                        "date": _utc_day(entry["timestamp"], unit="ms" if isinstance(entry["timestamp"], int) else None),
+                        "options_skew": float(entry.get("skew", np.nan)),
+                        "put_call_ratio": float(entry.get("put_call_ratio", np.nan)),
+                        "dvol": float(entry.get("dvol", np.nan)),
+                        "options_25d_skew": float(entry.get("options_25d_skew", np.nan)),
+                        "options_put_call_oi": float(entry.get("options_put_call_oi", np.nan)),
+                        "options_put_call_volume": float(entry.get("options_put_call_volume", np.nan)),
+                        "options_iv_30d": float(entry.get("options_iv_30d", np.nan)),
+                        "options_term_structure": float(entry.get("options_term_structure", np.nan)),
+                        "options_dvol": float(entry.get("options_dvol", np.nan)),
+                    })
+                return pd.DataFrame(rows).sort_values("date").reset_index(drop=True)
+        except Exception as exc:
+            if is_source_required(config, "options_skew"):
+                raise
+            pass
+
+    # --- Limited DVOL/snapshot fallback only ---
     # --- DVOL history (last 365 days) ---
     now_ms = int(pd.Timestamp.utcnow().timestamp() * 1000)
     start_ms = now_ms - 365 * 24 * 60 * 60 * 1000
@@ -530,25 +569,50 @@ def fetch_deribit_options(config: CryptoConfig) -> pd.DataFrame:
 
     put_call_ratio = put_oi / call_oi if call_oi > 0 else np.nan
     options_skew = (put_call_ratio - 1.0) if not np.isnan(put_call_ratio) else np.nan
+    put_call_volume = put_volume / call_volume if call_volume > 0 else np.nan
     today = pd.Timestamp.utcnow().normalize().tz_convert(None)
 
     snapshot = pd.DataFrame(
-        [{"date": today, "options_skew": options_skew, "put_call_ratio": put_call_ratio}]
+        [{
+            "date": today,
+            "options_skew": options_skew,
+            "put_call_ratio": put_call_ratio,
+            "options_25d_skew": options_skew,
+            "options_put_call_oi": put_call_ratio,
+            "options_put_call_volume": put_call_volume,
+            "options_iv_30d": np.nan,
+            "options_term_structure": np.nan,
+        }]
     )
 
     # Merge DVOL history with today's snapshot
     if dvol_frame.empty:
         result = snapshot.copy()
         result["dvol"] = np.nan
+        result["options_dvol"] = np.nan
     else:
+        dvol_frame["options_dvol"] = dvol_frame["dvol"]
         result = dvol_frame.merge(snapshot, on="date", how="outer")
         result = result.sort_values("date").reset_index(drop=True)
+        if "options_dvol_x" in result.columns or "options_dvol_y" in result.columns:
+            result["options_dvol"] = result.get("options_dvol_x", pd.Series(np.nan, index=result.index)).combine_first(
+                result.get("options_dvol_y", pd.Series(np.nan, index=result.index))
+            )
+            result = result.drop(columns=[c for c in ("options_dvol_x", "options_dvol_y") if c in result.columns])
 
-    for col in ("options_skew", "put_call_ratio", "dvol"):
+    for col in (
+        "options_skew", "put_call_ratio", "dvol",
+        "options_25d_skew", "options_put_call_oi", "options_put_call_volume",
+        "options_iv_30d", "options_term_structure", "options_dvol"
+    ):
         if col not in result.columns:
             result[col] = np.nan
 
-    return result[["date", "options_skew", "put_call_ratio", "dvol"]].reset_index(drop=True)
+    return result[[
+        "date", "options_skew", "put_call_ratio", "dvol",
+        "options_25d_skew", "options_put_call_oi", "options_put_call_volume",
+        "options_iv_30d", "options_term_structure", "options_dvol"
+    ]].reset_index(drop=True)
 
 
 def _write_csv(path: Path, frame: pd.DataFrame) -> None:
@@ -652,6 +716,10 @@ def _write_feature_quality(config: CryptoConfig, panel: pd.DataFrame, optional_f
         )
     quality = pd.DataFrame(rows)
     _write_csv(Path(config.data.features_dir) / "BTCUSDT_feature_coverage.csv", quality)
+    from egx_research.crypto_sources import get_source_env_var, get_source_api_key
+    env_var = get_source_env_var(config, "options_skew")
+    options_source_type = "historical_api" if get_source_api_key("options_skew", env_var) else "limited/proxy"
+
     write_json(
         Path(config.data.features_dir) / "BTCUSDT_feature_quality.json",
         {
@@ -660,6 +728,7 @@ def _write_feature_quality(config: CryptoConfig, panel: pd.DataFrame, optional_f
             "start_date": str(panel["date"].min().date()) if not panel.empty else "",
             "end_date": str(panel["date"].max().date()) if not panel.empty else "",
             "optional_files_present": {str(path): path.exists() for path in optional_files},
+            "options_source_type": options_source_type,
         },
     )
 
@@ -731,5 +800,10 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))
+    
+    env_var = get_source_env_var(config, "options_skew")
+    options_source_type = "historical_api" if get_source_api_key("options_skew", env_var) else "limited/proxy"
+    summary["options_source_type"] = options_source_type
+
     write_json(Path(config.data.features_dir) / "sync_summary.json", summary)
     return Path(config.data.features_path)

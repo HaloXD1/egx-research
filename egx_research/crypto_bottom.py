@@ -68,6 +68,8 @@ _SIGNAL_COLUMNS = [
     "CapMVRVCur", "FlowInExUSD", "FlowOutExUSD", "AdrActCnt", "TxCnt",
     "etf_net_flow_usd", "etf_net_flow_btc", "spot_coinbase_premium",
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
+    "options_25d_skew", "options_put_call_oi", "options_put_call_volume",
+    "options_iv_30d", "options_term_structure", "options_dvol",
     "fear_greed_value", "macro_nasdaq", "macro_us10y", "macro_dollar",
     "macro_fed_liquidity", "macro_vix",
 ]
@@ -81,6 +83,8 @@ _SIGNAL_ALIASES = {
     "options_options_skew": "options_skew",
     "options_put_call_ratio": "put_call_ratio",
     "options_dvol": "dvol",
+    "options_25d_skew": "options_skew",
+    "options_put_call_oi": "put_call_ratio",
 }
 
 
@@ -260,7 +264,20 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
     long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
     long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
-    out["derivatives"] = pd.concat([funding_reset, funding_cooling, oi_flush, long_liq_spike], axis=1).mean(axis=1)
+
+    iv_col = _optional_column(frame, "options_iv_30d").fillna(_optional_column(frame, "options_dvol"))
+    iv_compression = pd.Series(np.nan, index=frame.index)
+    if iv_col.notna().any():
+        iv_max = iv_col.rolling(30, min_periods=5).max()
+        iv_compression = _scale_between(1.0 - iv_col / iv_max.replace(0, np.nan), 0.05, 0.35)
+
+    term_struct = _optional_column(frame, "options_term_structure")
+    options_ts = _scale_between(term_struct, 0.95, 1.25)
+
+    out["derivatives"] = pd.concat([
+        funding_reset, funding_cooling, oi_flush, long_liq_spike,
+        iv_compression, options_ts
+    ], axis=1).mean(axis=1)
 
     mvrv = _optional_column(frame, "CapMVRVCur")
     mvrv_cheap = 1.0 - _scale_between(mvrv, 1.0, 2.7)
@@ -319,13 +336,16 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     fear_greed = _optional_column(frame, "fear_greed_value")
     fear_washout = 1.0 - _scale_between(fear_greed, 18, 60)
     fear_recovery = _scale_between(fear_greed - fear_greed.rolling(14, min_periods=5).min(), 0, 25)
-    options_skew = _optional_column(frame, "options_options_skew")
-    put_call = _optional_column(frame, "options_put_call_ratio")
+    opt_skew = _optional_column(frame, "options_25d_skew").fillna(_optional_column(frame, "options_options_skew"))
+    opt_pcr_oi = _optional_column(frame, "options_put_call_oi").fillna(_optional_column(frame, "options_put_call_ratio"))
+    opt_pcr_vol = _optional_column(frame, "options_put_call_volume")
+
+    options_skew_panic = _scale_between(opt_skew, 0.0, 0.20)
+    options_oi_panic = _scale_between(opt_pcr_oi, 0.8, 1.6)
+    options_vol_panic = _scale_between(opt_pcr_vol, 0.8, 1.6)
+
     hedge_washout = pd.concat(
-        [
-            _scale_between(options_skew, 0.0, 0.20),
-            _scale_between(put_call, 0.8, 1.6),
-        ],
+        [options_skew_panic, options_oi_panic, options_vol_panic],
         axis=1,
     ).mean(axis=1)
     out["sentiment"] = pd.concat([fear_washout, fear_recovery, hedge_washout, nupl_washout], axis=1).mean(axis=1)
@@ -807,6 +827,14 @@ def run_crypto_bottom_score(
         "data_quality": data_quality,
         "reliability_rating": data_quality["reliability_rating"],
         "reliability_note": data_quality["reliability_note"],
+        "options_audit": {
+            "options_25d_skew": float(latest["options_25d_skew"]) if "options_25d_skew" in latest and pd.notna(latest["options_25d_skew"]) else None,
+            "options_put_call_oi": float(latest["options_put_call_oi"]) if "options_put_call_oi" in latest and pd.notna(latest["options_put_call_oi"]) else None,
+            "options_put_call_volume": float(latest["options_put_call_volume"]) if "options_put_call_volume" in latest and pd.notna(latest["options_put_call_volume"]) else None,
+            "options_iv_30d": float(latest["options_iv_30d"]) if "options_iv_30d" in latest and pd.notna(latest["options_iv_30d"]) else None,
+            "options_term_structure": float(latest["options_term_structure"]) if "options_term_structure" in latest and pd.notna(latest["options_term_structure"]) else None,
+            "options_dvol": float(latest["options_dvol"]) if "options_dvol" in latest and pd.notna(latest["options_dvol"]) else None,
+        },
     }
 
     grid.to_csv(run_dir / "bottom_probability_grid.csv", index=False)

@@ -140,3 +140,82 @@ def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
     assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
     assert merged["options_options_skew"].equals(merged["options_skew"])
     assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])
+
+
+def test_options_features_move_sentiment_and_derivatives() -> None:
+    rows = 120
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    close = np.linspace(100.0, 120.0, rows)
+    base = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "fear_greed_value": np.full(rows, 50.0),
+            "CapMVRVCur": np.full(rows, 1.5),
+        }
+    )
+
+    low_options = _add_market_indicators(base.copy())
+    low_options["options_25d_skew"] = 0.0
+    low_options["options_put_call_oi"] = 0.8
+    low_options["options_put_call_volume"] = 0.8
+    low_options["options_iv_30d"] = np.linspace(0.55, 0.80, rows)
+    low_options["options_term_structure"] = 0.95
+
+    strong_options = _add_market_indicators(base.copy())
+    strong_options["options_25d_skew"] = 0.20
+    strong_options["options_put_call_oi"] = 1.6
+    strong_options["options_put_call_volume"] = 1.6
+    strong_options["options_iv_30d"] = np.r_[np.full(rows - 1, 0.80), 0.55]
+    strong_options["options_term_structure"] = 1.25
+
+    low_scores = _component_scores(low_options)
+    strong_scores = _component_scores(strong_options)
+
+    assert strong_scores["sentiment"].iloc[-1] > low_scores["sentiment"].iloc[-1]
+    assert strong_scores["derivatives"].iloc[-1] > low_scores["derivatives"].iloc[-1]
+
+
+def test_missing_options_data_keeps_score_stable() -> None:
+    rows = 120
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    close = np.linspace(100.0, 120.0, rows)
+    base = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "fear_greed_value": np.full(rows, 50.0),
+            "CapMVRVCur": np.full(rows, 1.5),
+        }
+    )
+    with_missing_columns = base.copy()
+    for column in [
+        "options_25d_skew",
+        "options_put_call_oi",
+        "options_put_call_volume",
+        "options_iv_30d",
+        "options_term_structure",
+    ]:
+        with_missing_columns[column] = np.nan
+
+    scores_without = _component_scores(_add_market_indicators(base))
+    scores_with_missing = _component_scores(_add_market_indicators(with_missing_columns))
+
+    pd.testing.assert_series_equal(
+        scores_without["sentiment"],
+        scores_with_missing["sentiment"],
+        check_names=False,
+    )
+    pd.testing.assert_series_equal(
+        scores_without["derivatives"],
+        scores_with_missing["derivatives"],
+        check_names=False,
+    )

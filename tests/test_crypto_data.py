@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_data import (
@@ -115,6 +116,11 @@ def test_feature_panel_shifts_external_features(tmp_path) -> None:
             "options_skew": [0.1, 0.1, 0.2, 0.2],
             "put_call_ratio": [1.1, 1.1, 1.2, 1.2],
             "dvol": [50.0, 51.0, 52.0, 53.0],
+            "options_25d_skew": [0.05, 0.06, 0.07, 0.08],
+            "options_put_call_oi": [1.2, 1.3, 1.4, 1.5],
+            "options_put_call_volume": [1.1, 1.2, 1.3, 1.4],
+            "options_iv_30d": [0.70, 0.68, 0.66, 0.64],
+            "options_term_structure": [0.95, 1.00, 1.05, 1.10],
         }
     ).to_csv(tmp_path / "raw" / "options_skew.csv", index=False)
 
@@ -132,6 +138,11 @@ def test_feature_panel_shifts_external_features(tmp_path) -> None:
     assert panel.iloc[1]["options_options_skew"] == 0.1
     assert panel.iloc[1]["options_put_call_ratio"] == 1.1
     assert panel.iloc[1]["options_dvol"] == 50.0
+    assert panel.iloc[1]["options_25d_skew"] == 0.05
+    assert panel.iloc[1]["options_put_call_oi"] == 1.2
+    assert panel.iloc[1]["options_put_call_volume"] == 1.1
+    assert panel.iloc[1]["options_iv_30d"] == 0.70
+    assert panel.iloc[1]["options_term_structure"] == 0.95
 
 
 def test_feature_panel_keeps_current_options_snapshot(tmp_path) -> None:
@@ -230,7 +241,7 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     today = pd.Timestamp.utcnow().normalize()
     today_ms = int(today.timestamp() * 1000)
     
-    def mock_get_json(url, params=None):
+    def mock_get_json(url, params=None, headers=None):
         if "get_volatility_index_data" in url:
             return {"result": {"data": [[today_ms, 50.0, 55.0, 48.0, 52.0]]}}
         elif "get_book_summary_by_currency" in url:
@@ -243,8 +254,52 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
     df = fetch_deribit_options(config)
     assert not df.empty
-    assert list(df.columns) == ["date", "options_skew", "put_call_ratio", "dvol"]
+    assert list(df.columns) == [
+        "date",
+        "options_skew",
+        "put_call_ratio",
+        "dvol",
+        "options_25d_skew",
+        "options_put_call_oi",
+        "options_put_call_volume",
+        "options_iv_30d",
+        "options_term_structure",
+        "options_dvol",
+    ]
     assert df.iloc[0]["date"] == today.tz_convert(None)
     assert df.iloc[0]["dvol"] == 52.0
+    assert df.iloc[0]["options_dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
+    assert df.iloc[0]["options_put_call_oi"] == 0.5
+    assert df.iloc[0]["options_put_call_volume"] == pytest.approx(1 / 3)
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_fetch_deribit_options_historical_api(monkeypatch) -> None:
+    config = CryptoConfig()
+    monkeypatch.setenv("DERIBIT_API_KEY", "test-key")
+
+    def mock_get_json(url, params=None, headers=None):
+        assert headers == {"Authorization": "Bearer test-key"}
+        return {
+            "result": [
+                {
+                    "timestamp": 1704067200000,
+                    "skew": 0.12,
+                    "put_call_ratio": 1.4,
+                    "dvol": 55.0,
+                    "options_25d_skew": 0.10,
+                    "options_put_call_oi": 1.5,
+                    "options_put_call_volume": 1.3,
+                    "options_iv_30d": 0.72,
+                    "options_term_structure": 1.08,
+                    "options_dvol": 55.0,
+                }
+            ]
+        }
+
+    monkeypatch.setattr("egx_research.crypto_data._get_json", mock_get_json)
+    df = fetch_deribit_options(config)
+    assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert df.iloc[0]["options_25d_skew"] == 0.10
+    assert df.iloc[0]["options_put_call_oi"] == 1.5
