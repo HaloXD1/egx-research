@@ -41,6 +41,7 @@ OPTIONAL_FEATURE_PREFIXES = {
     "open_interest.csv": "derivatives",
     "coinbase_premium.csv": "spot",
     "stablecoin_supply.csv": "liquidity",
+    "exchange_stablecoin_reserves.csv": "liquidity",
     "options_skew.csv": "options",
     "btc_etf_flows.csv": "etf",
 }
@@ -49,6 +50,7 @@ OPTIONAL_CANONICAL_COLUMNS = {
     "open_interest.csv": {"derivatives_open_interest", "derivatives_open_interest_value"},
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
+    "exchange_stablecoin_reserves.csv": {"liquidity_exchange_stablecoin_reserves"},
     "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
     "btc_etf_flows.csv": {
         "etf_flow_ibit",
@@ -564,44 +566,105 @@ def fetch_coinbase_premium(config: CryptoConfig) -> pd.DataFrame:
 
 def fetch_stablecoin_supply(config: CryptoConfig) -> pd.DataFrame:
     """Fetch total stablecoin supply (USDT + USDC) from DefiLlama."""
-    frames: list[pd.DataFrame] = []
-    for stablecoin_id in (1, 2):  # 1=USDT, 2=USDC
-        payload = _get_json(
-            f"https://stablecoins.llama.fi/stablecoincharts/all?stablecoin={stablecoin_id}"
-        )
-        if not payload:
-            continue
-        rows = []
-        for item in payload:
-            pegged = item.get("totalCirculatingUSD", {}).get("peggedUSD")
-            if pegged is None:
+    fallback_path = Path(config.data.raw_dir) / "stablecoin_supply.csv"
+    try:
+        frames: list[pd.DataFrame] = []
+        for stablecoin_id in (1, 2):  # 1=USDT, 2=USDC
+            payload = _get_json(
+                f"https://stablecoins.llama.fi/stablecoincharts/all?stablecoin={stablecoin_id}"
+            )
+            if not payload:
                 continue
-            rows.append(
-                {
-                    "date": _utc_day(int(item["date"]), unit="s"),
-                    "supply": float(pegged),
-                }
-            )
-        if rows:
-            frame = (
-                pd.DataFrame(rows)
-                .sort_values("date")
-                .drop_duplicates("date", keep="last")
-                .reset_index(drop=True)
-            )
-            frames.append(frame)
+            rows = []
+            for item in payload:
+                pegged = item.get("totalCirculatingUSD", {}).get("peggedUSD")
+                if pegged is None:
+                    continue
+                rows.append(
+                    {
+                        "date": _utc_day(int(item["date"]), unit="s"),
+                        "supply": float(pegged),
+                    }
+                )
+            if rows:
+                frame = (
+                    pd.DataFrame(rows)
+                    .sort_values("date")
+                    .drop_duplicates("date", keep="last")
+                    .reset_index(drop=True)
+                )
+                frames.append(frame)
 
-    if not frames:
+        if not frames:
+            raise ValueError("No stablecoin supply frames retrieved from DefiLlama")
+
+        if len(frames) == 1:
+            result = frames[0].rename(columns={"supply": "stablecoin_supply"})
+        else:
+            merged = frames[0].merge(frames[1], on="date", how="outer", suffixes=("_usdt", "_usdc"))
+            merged["stablecoin_supply"] = merged["supply_usdt"].fillna(0) + merged["supply_usdc"].fillna(0)
+            result = merged[["date", "stablecoin_supply"]]
+
+        return result.sort_values("date").reset_index(drop=True)
+    except Exception as exc:
+        if fallback_path.exists():
+            print(f"Warning: DefiLlama stablecoin fetch failed: {exc}. Using cached CSV fallback.")
+            try:
+                df = pd.read_csv(fallback_path)
+                if "date" in df.columns and not df.empty:
+                    df["date"] = pd.to_datetime(df["date"])
+                    return df
+            except Exception:
+                pass
+        print(f"Warning: DefiLlama stablecoin fetch failed and no cache exists: {exc}. Returning empty DataFrame.")
         return pd.DataFrame(columns=["date", "stablecoin_supply"])
 
-    if len(frames) == 1:
-        result = frames[0].rename(columns={"supply": "stablecoin_supply"})
-    else:
-        merged = frames[0].merge(frames[1], on="date", how="outer", suffixes=("_usdt", "_usdc"))
-        merged["stablecoin_supply"] = merged["supply_usdt"].fillna(0) + merged["supply_usdc"].fillna(0)
-        result = merged[["date", "stablecoin_supply"]]
 
-    return result.sort_values("date").reset_index(drop=True)
+def fetch_exchange_stablecoin_reserves(config: CryptoConfig) -> pd.DataFrame:
+    """Fetch exchange stablecoin reserves (CryptoQuant or local CSV fallback)."""
+    import os
+    fallback_path = Path(config.data.raw_dir) / "exchange_stablecoin_reserves.csv"
+    
+    api_key = get_source_api_key("exchange_stablecoin_reserves", get_source_env_var(config, "exchange_stablecoin_reserves"))
+    if not api_key:
+        api_key = os.getenv("CRYPTOQUANT_API_KEY")
+
+    if api_key:
+        url = "https://api.cryptoquant.com/v1/btc/exchange-flows/stablecoin-reserves"
+        try:
+            payload = _get_json(url, {"limit": 1000, "token": api_key})
+            rows = []
+            data_list = []
+            if isinstance(payload, dict) and "result" in payload:
+                data_list = payload["result"].get("data", [])
+            elif isinstance(payload, list):
+                data_list = payload
+            for item in data_list:
+                date_val = item.get("date") or item.get("time") or item.get("timestamp")
+                reserves = item.get("exchange_stablecoin_reserves") or item.get("reserves") or item.get("value")
+                if date_val is not None and reserves is not None:
+                    rows.append({
+                        "date": _utc_day(date_val),
+                        "exchange_stablecoin_reserves": float(reserves)
+                    })
+            if rows:
+                return pd.DataFrame(rows).sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+        except Exception as exc:
+            print(f"Warning: Exchange stablecoin reserves API fetch failed: {exc}")
+
+    if fallback_path.exists():
+        try:
+            df = pd.read_csv(fallback_path)
+            for col in ["liquidity_exchange_stablecoin_reserves", "exchange_stablecoin_reserves"]:
+                if col in df.columns:
+                    df = df.rename(columns={col: "exchange_stablecoin_reserves"})
+                    df["date"] = pd.to_datetime(df["date"])
+                    return df[["date", "exchange_stablecoin_reserves"]].sort_values("date").reset_index(drop=True)
+        except Exception as exc:
+            print(f"Warning: Failed to read local exchange stablecoin reserves CSV: {exc}")
+
+    print("Warning: Exchange stablecoin reserves fetch failed and no cache exists. Returning empty DataFrame.")
+    return pd.DataFrame(columns=["date", "exchange_stablecoin_reserves"])
 
 
 def fetch_deribit_options(config: CryptoConfig) -> pd.DataFrame:
@@ -728,6 +791,7 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         raw_dir / "open_interest.csv",
         raw_dir / "coinbase_premium.csv",
         raw_dir / "stablecoin_supply.csv",
+        raw_dir / "exchange_stablecoin_reserves.csv",
         raw_dir / "options_skew.csv",
     ]
     for path in optional_files:
@@ -750,6 +814,19 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
             panel[column] = panel[column].shift(1)
         else:
             panel[column] = pd.to_numeric(panel[column], errors="coerce").shift(1)
+
+    # Compute lag-safe dry powder ratio after shifting loop
+    if "liquidity_stablecoin_supply" in panel.columns:
+        sply = panel["SplyCur"] if "SplyCur" in panel.columns else pd.Series(19500000.0, index=panel.index)
+        sply = sply.fillna(19500000.0).replace(0, 19500000.0)
+        prev_close = panel["close"].shift(1)
+        btc_mcap_lagged = prev_close * sply
+        panel["liquidity_dry_powder_ratio"] = panel["liquidity_stablecoin_supply"] / btc_mcap_lagged.replace(0, np.nan)
+    else:
+        panel["liquidity_dry_powder_ratio"] = np.nan
+
+    if "liquidity_dry_powder_ratio" not in external_columns:
+        external_columns.append("liquidity_dry_powder_ratio")
 
     panel["return_1d"] = panel["close"].pct_change()
     panel["return_7d"] = panel["close"].pct_change(7)
@@ -821,13 +898,15 @@ def _sync_optional_source(
             data, etf_summary = fetch_fn(config)
             summary["btc_etf_flows"] = etf_summary
             status = etf_summary.get("status", "success")
-            if status != "fallback_local":
+            if status != "fallback_local" and len(data) > 0:
                 _write_csv(raw_dir / filename, data)
         else:
             data = fetch_fn(config)
-            _write_csv(raw_dir / filename, data)
-            status = "success"
-
+            if len(data) == 0 and not SOURCE_REGISTRY.get(name, {}).get("critical", False):
+                status = "missing_optional"
+            else:
+                _write_csv(raw_dir / filename, data)
+                status = "success"
         if name == "funding_rates":
             rows_key = "funding_rows"
         elif name == "btc_etf_flows":
@@ -864,6 +943,7 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     _sync_optional_source("open_interest", fetch_open_interest, config, raw_dir, "open_interest.csv", summary)
     _sync_optional_source("coinbase_premium", fetch_coinbase_premium, config, raw_dir, "coinbase_premium.csv", summary)
     _sync_optional_source("stablecoin_supply", fetch_stablecoin_supply, config, raw_dir, "stablecoin_supply.csv", summary)
+    _sync_optional_source("exchange_stablecoin_reserves", fetch_exchange_stablecoin_reserves, config, raw_dir, "exchange_stablecoin_reserves.csv", summary)
     _sync_optional_source("options_skew", fetch_deribit_options, config, raw_dir, "options_skew.csv", summary)
 
     panel = build_crypto_feature_panel(config)

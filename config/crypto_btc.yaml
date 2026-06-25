@@ -62,6 +62,10 @@ sources:
       enabled: true
       env_var: DEFILLAMA_API_KEY
       required: false
+    exchange_stablecoin_reserves:
+      enabled: true
+      env_var: EXCHANGE_STABLECOIN_RESERVES_API_KEY
+      required: false
     options_skew:
       enabled: true
       env_var: DERIBIT_API_KEY
