@@ -42,6 +42,7 @@ OPTIONAL_FEATURE_PREFIXES = {
     "coinbase_premium.csv": "spot",
     "stablecoin_supply.csv": "liquidity",
     "options_skew.csv": "options",
+    "btc_etf_flows.csv": "etf",
 }
 
 OPTIONAL_CANONICAL_COLUMNS = {
@@ -49,6 +50,14 @@ OPTIONAL_CANONICAL_COLUMNS = {
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
     "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
+    "btc_etf_flows.csv": {
+        "etf_flow_ibit",
+        "etf_flow_fbtc",
+        "etf_flow_arkb",
+        "etf_flow_bitb",
+        "etf_flow_gbtc",
+        "etf_net_flow_usd",
+    },
 }
 
 CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
@@ -267,26 +276,144 @@ def _parse_flow_value(value: Any) -> float:
     return -amount if negative else amount
 
 
-def fetch_btc_etf_flows(config: CryptoConfig) -> pd.DataFrame:
-    text = _get_text(config.sources.bitcoin_etf_flows_url)
-    tables = pd.read_html(StringIO(text))
-    for table in tables:
-        table.columns = [str(column).strip() for column in table.columns]
-        if "Date" not in table.columns or "Total" not in table.columns:
-            continue
-        frame = table[["Date", "Total"]].copy()
-        frame["date"] = pd.to_datetime(frame["Date"], errors="coerce")
-        frame["etf_net_flow_usd"] = frame["Total"].map(_parse_flow_value) * 1_000_000.0
-        frame = frame.dropna(subset=["date"])
-        if frame.empty:
-            continue
-        return (
-            frame[["date", "etf_net_flow_usd"]]
-            .sort_values("date")
-            .drop_duplicates("date", keep="last")
-            .reset_index(drop=True)
-        )
-    return pd.DataFrame(columns=["date", "etf_net_flow_usd"])
+def _validate_etf_data(df: pd.DataFrame) -> list[str]:
+    warnings = []
+    required_cols = [
+        "date", "etf_flow_ibit", "etf_flow_fbtc", "etf_flow_arkb",
+        "etf_flow_bitb", "etf_flow_gbtc", "etf_net_flow_usd"
+    ]
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"Required ETF column '{col}' is missing.")
+            
+    # Check if all numeric columns are actually numeric
+    for col in required_cols:
+        if col != "date":
+            if not pd.api.types.is_numeric_dtype(df[col]):
+                raise ValueError(f"ETF column '{col}' is not numeric.")
+            if df[col].isna().all():
+                raise ValueError(f"ETF column '{col}' contains only NaN values.")
+
+    # Check dates are valid, sorted, and not in the future
+    if not pd.api.types.is_datetime64_any_dtype(df["date"]):
+        raise ValueError("ETF 'date' column is not a datetime type.")
+
+    today_utc = pd.Timestamp.now(UTC).tz_localize(None).normalize()
+    future_dates = df[df["date"] > today_utc]
+    if not future_dates.empty:
+        raise ValueError(f"ETF data contains future dates: {future_dates['date'].tolist()}")
+        
+    if not df["date"].is_monotonic_increasing:
+        raise ValueError("ETF data dates are not sorted in ascending order.")
+        
+    if df["date"].duplicated().any():
+        raise ValueError("ETF data contains duplicate dates.")
+        
+    # Unit check (warning only)
+    non_zeros = df.loc[df["etf_net_flow_usd"] != 0, "etf_net_flow_usd"]
+    if not non_zeros.empty:
+        avg_abs_flow = non_zeros.abs().mean()
+        if avg_abs_flow < 100_000.0:
+            warnings.append(
+                f"ETF net flow values seem unscaled or incorrect (avg absolute non-zero flow is ${avg_abs_flow:.2f})."
+            )
+            
+    return warnings
+
+
+def fetch_btc_etf_flows(config: CryptoConfig) -> tuple[pd.DataFrame, dict[str, Any]]:
+    url = config.sources.bitcoin_etf_flows_url
+    raw_dir = Path(config.data.raw_dir)
+    fallback_path = raw_dir / "btc_etf_flows.csv"
+    
+    # Try fetching public URL
+    try:
+        text = _get_text(url)
+        tables = pd.read_html(StringIO(text))
+        
+        parsed_df = None
+        warnings = []
+        for table in tables:
+            # Match columns case-insensitively and with substring matches
+            col_mapping = {}
+            for original_col in table.columns:
+                cleaned = str(original_col).strip().replace("US$m", "").replace(" ", "").lower()
+                if cleaned == "date":
+                    col_mapping["date"] = original_col
+                elif cleaned == "total" or cleaned == "netflow":
+                    col_mapping["total"] = original_col
+                elif "ibit" in cleaned:
+                    col_mapping["ibit"] = original_col
+                elif "fbtc" in cleaned:
+                    col_mapping["fbtc"] = original_col
+                elif "arkb" in cleaned:
+                    col_mapping["arkb"] = original_col
+                elif "bitb" in cleaned:
+                    col_mapping["bitb"] = original_col
+                elif "gbtc" in cleaned:
+                    col_mapping["gbtc"] = original_col
+            
+            # Check if all required columns were found in this table
+            required_keys = ["date", "total", "ibit", "fbtc", "arkb", "bitb", "gbtc"]
+            if all(k in col_mapping for k in required_keys):
+                frame = pd.DataFrame(index=table.index)
+                frame["date"] = pd.to_datetime(table[col_mapping["date"]], errors="coerce")
+                frame["etf_flow_ibit"] = table[col_mapping["ibit"]].map(_parse_flow_value) * 1_000_000.0
+                frame["etf_flow_fbtc"] = table[col_mapping["fbtc"]].map(_parse_flow_value) * 1_000_000.0
+                frame["etf_flow_arkb"] = table[col_mapping["arkb"]].map(_parse_flow_value) * 1_000_000.0
+                frame["etf_flow_bitb"] = table[col_mapping["bitb"]].map(_parse_flow_value) * 1_000_000.0
+                frame["etf_flow_gbtc"] = table[col_mapping["gbtc"]].map(_parse_flow_value) * 1_000_000.0
+                frame["etf_net_flow_usd"] = table[col_mapping["total"]].map(_parse_flow_value) * 1_000_000.0
+                
+                # Tolerates missing days (weekends, holidays) - drop NaT dates
+                frame = frame.dropna(subset=["date"])
+                if frame.empty:
+                    continue
+                
+                frame = (
+                    frame.sort_values("date")
+                    .drop_duplicates("date", keep="last")
+                    .reset_index(drop=True)
+                )
+                
+                # Perform validation
+                warnings = _validate_etf_data(frame)
+                parsed_df = frame
+                break
+        
+        if parsed_df is not None:
+            return parsed_df, {
+                "source_url": url,
+                "status": "success",
+                "rows": len(parsed_df),
+                "columns": list(parsed_df.columns),
+                "warnings": warnings,
+            }
+        else:
+            raise ValueError("No table in public ETF URL matched the required schema.")
+            
+    except Exception as exc:
+        # Fallback to local CSV (explicit status: fallback_local)
+        if fallback_path.exists():
+            try:
+                fallback_df = pd.read_csv(fallback_path, parse_dates=["date"])
+                warnings = _validate_etf_data(fallback_df)
+                return fallback_df, {
+                    "source_url": url,
+                    "status": "fallback_local",
+                    "rows": len(fallback_df),
+                    "columns": list(fallback_df.columns),
+                    "warnings": warnings,
+                    "error": str(exc),
+                }
+            except Exception as fallback_exc:
+                raise ValueError(
+                    f"Public ETF fetch failed: {exc}. Local CSV fallback read failed: {fallback_exc}"
+                ) from exc
+        else:
+            raise ValueError(
+                f"Public ETF fetch failed: {exc}. No local CSV fallback found at {fallback_path}"
+            ) from exc
 
 
 def fetch_macro(config: CryptoConfig) -> pd.DataFrame:
@@ -688,9 +815,19 @@ def _sync_optional_source(
         if name == "coinmetrics":
             data, cm_summary = fetch_fn(config)
             summary["coinmetrics"] = cm_summary
+            _write_csv(raw_dir / filename, data)
+            status = "success"
+        elif name == "btc_etf_flows":
+            data, etf_summary = fetch_fn(config)
+            summary["btc_etf_flows"] = etf_summary
+            status = etf_summary.get("status", "success")
+            if status != "fallback_local":
+                _write_csv(raw_dir / filename, data)
         else:
             data = fetch_fn(config)
-        _write_csv(raw_dir / filename, data)
+            _write_csv(raw_dir / filename, data)
+            status = "success"
+
         if name == "funding_rates":
             rows_key = "funding_rows"
         elif name == "btc_etf_flows":
@@ -698,7 +835,7 @@ def _sync_optional_source(
         else:
             rows_key = f"{name}_rows"
         summary[rows_key] = int(len(data))
-        source_statuses[name] = "success"
+        source_statuses[name] = status
     except Exception as exc:
         if is_source_required(config, name):
             raise
