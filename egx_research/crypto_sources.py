@@ -155,6 +155,22 @@ SOURCE_REGISTRY = {
         "env_var": "DERIBIT_API_KEY",
         "critical": False,
     },
+    "liquidations": {
+        "provider": "Coinglass",
+        "category": "derivatives",
+        "paid_free": "paid",
+        "freshness_sla_hours": 36,
+        "required_columns": [
+            "derivatives_long_liq_usd",
+            "derivatives_short_liq_usd",
+            "derivatives_total_liq_usd",
+            "derivatives_liq_imbalance",
+        ],
+        "filename": "liquidations.csv",
+        "env_var": "COINGLASS_API_KEY",
+        "critical": False,
+        "requires_credentials": False,
+    },
 }
 
 
