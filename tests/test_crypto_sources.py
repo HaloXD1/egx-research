@@ -148,6 +148,7 @@ def test_sync_fails_missing_credentials_if_required(tmp_path, monkeypatch) -> No
 
     # Require coinmetrics and make credentials missing
     config.sources.optional_sources["coinmetrics"]["required"] = True
+    config.sources.optional_sources["coinmetrics"]["env_var"] = "COINMETRICS_API_KEY"
     monkeypatch.delenv("COINMETRICS_API_KEY", raising=False)
 
     dummy_price = pd.DataFrame({
@@ -541,6 +542,7 @@ def test_glassnode_sth_sopr_source_metadata() -> None:
 
 def test_liquidations_optional_source_missing(tmp_path, monkeypatch) -> None:
     config = CryptoConfig()
+    config.sources.optional_sources["liquidations"]["enabled"] = True
     config.data.raw_dir = str(tmp_path / "raw")
     config.data.normalized_dir = str(tmp_path / "normalized")
     config.data.features_dir = str(tmp_path / "features")
