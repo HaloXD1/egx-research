@@ -517,3 +517,38 @@ def test_missing_options_data_keeps_score_stable() -> None:
         scores_with_missing["sentiment"],
         check_names=False,
     )
+
+
+def test_exchange_flows_improve_onchain_score() -> None:
+    rows = 140
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    close = np.linspace(100.0, 120.0, rows)
+    base = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "CapMVRVCur": np.full(rows, 1.5),
+            "FlowOutExUSD": np.full(rows, 5_000_000.0),
+            "FlowInExUSD": np.full(rows, 5_000_000.0),
+        }
+    )
+    weak = _add_market_indicators(base.copy())
+    weak["onchain_exchange_reserve_btc"] = np.linspace(2_000_000.0, 2_050_000.0, rows)
+    weak["onchain_exchange_netflow_btc"] = np.full(rows, 1000.0)
+    weak["onchain_whale_inflow_usd"] = np.full(rows, 50_000_000.0)
+    weak["onchain_realized_profit_loss_exchange"] = np.full(rows, 25_000_000.0)
+
+    strong = _add_market_indicators(base.copy())
+    strong["onchain_exchange_reserve_btc"] = np.linspace(2_000_000.0, 1_850_000.0, rows)
+    strong["onchain_exchange_netflow_btc"] = np.full(rows, -3000.0)
+    strong["onchain_whale_inflow_usd"] = np.full(rows, 5_000_000.0)
+    strong["onchain_realized_profit_loss_exchange"] = np.full(rows, -100_000_000.0)
+
+    weak_scores = _component_scores(weak)
+    strong_scores = _component_scores(strong)
+
+    assert strong_scores["onchain"].iloc[-1] > weak_scores["onchain"].iloc[-1]

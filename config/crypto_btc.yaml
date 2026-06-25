@@ -78,6 +78,10 @@ sources:
       enabled: true
       env_var: COINGLASS_API_KEY
       required: false
+    exchange_flows:
+      enabled: true
+      env_var: CRYPTOQUANT_API_KEY
+      required: false
 
 
 backtest:

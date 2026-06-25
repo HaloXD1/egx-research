@@ -20,6 +20,7 @@ from egx_research.crypto_data import (
     fetch_exchange_stablecoin_reserves,
     fetch_futures_positioning,
     fetch_liquidations,
+    fetch_exchange_flows,
 )
 
 
@@ -490,3 +491,24 @@ def test_fetch_deribit_options_historical_api(monkeypatch) -> None:
     assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
     assert df.iloc[0]["options_25d_skew"] == 0.10
     assert df.iloc[0]["options_put_call_oi"] == 1.5
+
+
+def test_fetch_exchange_flows_local_csv_aliases(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("CRYPTOQUANT_API_KEY", raising=False)
+    pd.DataFrame(
+        {
+            "date": ["2024-01-01", "2024-01-02"],
+            "exchange_reserve_btc": [2_000_000.0, 1_990_000.0],
+            "exchange_netflow_btc": [-1500.0, -2500.0],
+            "netflow_usd": [-60_000_000.0, -100_000_000.0],
+            "whale_inflow_usd": [10_000_000.0, 12_000_000.0],
+            "realized_pnl": [-50_000_000.0, -75_000_000.0],
+        }
+    ).to_csv(tmp_path / "exchange_flows.csv", index=False)
+
+    frame = fetch_exchange_flows(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[1]["onchain_exchange_reserve_btc"] == 1_990_000.0
+    assert frame.iloc[1]["onchain_exchange_netflow_btc"] == -2500.0

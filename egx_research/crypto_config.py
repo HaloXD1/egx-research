@@ -94,6 +94,7 @@ class CryptoSourceConfig:
             "exchange_stablecoin_reserves": {"enabled": True, "env_var": "EXCHANGE_STABLECOIN_RESERVES_API_KEY", "required": False},
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
             "liquidations": {"enabled": True, "env_var": "COINGLASS_API_KEY", "required": False},
+            "exchange_flows": {"enabled": True, "env_var": "CRYPTOQUANT_API_KEY", "required": False},
         }
     )
 

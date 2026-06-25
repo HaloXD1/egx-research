@@ -46,6 +46,7 @@ OPTIONAL_FEATURE_PREFIXES = {
     "options_skew.csv": "options",
     "btc_etf_flows.csv": "etf",
     "liquidations.csv": "derivatives",
+    "exchange_flows.csv": "onchain",
 }
 
 OPTIONAL_CANONICAL_COLUMNS = {
@@ -86,9 +87,30 @@ OPTIONAL_CANONICAL_COLUMNS = {
         "derivatives_heatmap_nearest_down_liq",
         "derivatives_heatmap_nearest_up_liq",
     },
+    "exchange_flows.csv": {
+        "onchain_exchange_reserve_btc",
+        "onchain_exchange_netflow_btc",
+        "onchain_exchange_netflow_usd",
+        "onchain_whale_inflow_usd",
+        "onchain_realized_profit_loss_exchange",
+    },
+}
+
+EXCHANGE_FLOWS_ALIASES = {
+    "exchange_reserve_btc": "onchain_exchange_reserve_btc",
+    "exchange_reserve": "onchain_exchange_reserve_btc",
+    "exchange_netflow_btc": "onchain_exchange_netflow_btc",
+    "exchange_netflow": "onchain_exchange_netflow_btc",
+    "exchange_netflow_usd": "onchain_exchange_netflow_usd",
+    "netflow_usd": "onchain_exchange_netflow_usd",
+    "whale_inflow_usd": "onchain_whale_inflow_usd",
+    "whale_inflow": "onchain_whale_inflow_usd",
+    "realized_profit_loss_exchange": "onchain_realized_profit_loss_exchange",
+    "realized_pnl": "onchain_realized_profit_loss_exchange",
 }
 
 CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
+
 
 
 def _date_to_ms(value: str | pd.Timestamp | datetime) -> int:
@@ -1081,6 +1103,64 @@ def fetch_liquidations(config: CryptoConfig) -> pd.DataFrame:
         return load_local_fallback()
 
 
+def validate_exchange_flows(frame: pd.DataFrame) -> None:
+    """Perform strict date and unit validations on exchange flows data."""
+    if "date" not in frame.columns:
+        raise ValueError("Exchange flows data must contain a 'date' column.")
+
+    # Ensure no NaN dates and parse dates properly
+    try:
+        dates = pd.to_datetime(frame["date"])
+    except Exception as e:
+        raise ValueError(f"Exchange flows 'date' column contains invalid dates: {e}")
+
+    if dates.isna().any():
+        raise ValueError("Exchange flows 'date' column contains null or invalid dates.")
+
+    # Validate exchange reserve in BTC (reasonable historical bounds: 100k to 10M BTC)
+    if "onchain_exchange_reserve_btc" in frame.columns:
+        reserves = pd.to_numeric(frame["onchain_exchange_reserve_btc"], errors="coerce").dropna()
+        if not reserves.empty:
+            if (reserves > 10_000_000).any():
+                raise ValueError("Exchange reserve contains values > 10,000,000, indicating USD instead of BTC units.")
+            if (reserves < 0).any():
+                raise ValueError("Exchange reserve cannot be negative.")
+
+    # Validate daily netflow in BTC (reasonable daily bounds: absolute value < 500k BTC)
+    if "onchain_exchange_netflow_btc" in frame.columns:
+        netflows = pd.to_numeric(frame["onchain_exchange_netflow_btc"], errors="coerce").dropna()
+        if not netflows.empty:
+            if (netflows.abs() > 500_000).any():
+                raise ValueError("Exchange netflow in BTC contains values with absolute value > 500,000 BTC, indicating USD instead of BTC units.")
+
+
+def rename_exchange_flows_columns(frame: pd.DataFrame) -> pd.DataFrame:
+    """Rename raw column names to canonical names using EXCHANGE_FLOWS_ALIASES."""
+    rename_dict = {}
+    for col in frame.columns:
+        if col in EXCHANGE_FLOWS_ALIASES:
+            rename_dict[col] = EXCHANGE_FLOWS_ALIASES[col]
+    return frame.rename(columns=rename_dict)
+
+
+def fetch_exchange_flows(config: CryptoConfig) -> pd.DataFrame:
+    """Minimal API hook for exchange flows. Fall back to existing local CSV since API contract is unknown."""
+    raw_path = Path(config.data.raw_dir) / "exchange_flows.csv"
+    if raw_path.exists():
+        df = pd.read_csv(raw_path)
+        df["date"] = df["date"].map(_utc_day)
+        df = rename_exchange_flows_columns(df)
+        validate_exchange_flows(df)
+        df = df.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+        return df
+
+    # Return a minimal empty DataFrame with canonical columns
+    cols = ["date", "onchain_exchange_reserve_btc", "onchain_exchange_netflow_btc",
+            "onchain_exchange_netflow_usd", "onchain_whale_inflow_usd",
+            "onchain_realized_profit_loss_exchange"]
+    return pd.DataFrame(columns=cols)
+
+
 def _write_csv(path: Path, frame: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False)
@@ -1135,11 +1215,16 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         raw_dir / "exchange_stablecoin_reserves.csv",
         raw_dir / "options_skew.csv",
         raw_dir / "liquidations.csv",
+        raw_dir / "exchange_flows.csv",
     ]
     for path in optional_files:
         if not path.exists():
             continue
         frame = pd.read_csv(path, parse_dates=["date"])
+        if path.name == "exchange_flows.csv":
+            frame["date"] = frame["date"].map(_utc_day)
+            frame = rename_exchange_flows_columns(frame)
+            validate_exchange_flows(frame)
         frame = _canonical_optional_columns(path, frame)
         panel = panel.merge(frame, on="date", how="left")
 
@@ -1294,6 +1379,7 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     _sync_optional_source("exchange_stablecoin_reserves", fetch_exchange_stablecoin_reserves, config, raw_dir, "exchange_stablecoin_reserves.csv", summary)
     _sync_optional_source("options_skew", fetch_deribit_options, config, raw_dir, "options_skew.csv", summary)
     _sync_optional_source("liquidations", fetch_liquidations, config, raw_dir, "liquidations.csv", summary)
+    _sync_optional_source("exchange_flows", fetch_exchange_flows, config, raw_dir, "exchange_flows.csv", summary)
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))
