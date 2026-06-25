@@ -194,6 +194,23 @@ SOURCE_REGISTRY = {
         "env_var": "CRYPTOQUANT_API_KEY",
         "critical": False,
     },
+    "glassnode_sth_sopr": {
+        "provider": "Glassnode",
+        "category": "onchain",
+        "paid_free": "paid",
+        "freshness_sla_hours": 36,
+        "required_columns": [
+            "onchain_sth_realized_price",
+            "onchain_sth_mvrv",
+            "onchain_sth_sopr",
+            "onchain_sopr",
+            "onchain_realized_loss_usd",
+            "onchain_realized_profit_usd",
+        ],
+        "filename": "glassnode_sth_sopr.csv",
+        "env_var": "GLASSNODE_API_KEY",
+        "critical": False,
+    },
 }
 
 

@@ -59,6 +59,7 @@ class CryptoSourceConfig:
     fred_base_url: str = "https://fred.stlouisfed.org/graph/fredgraph.csv"
     bitcoin_etf_flows_url: str = "https://farside.co.uk/bitcoin-etf-flow-all-data/"
     liquidations_url: str = "https://open-api.coinglass.com/public/v2/liquidation/history"
+    glassnode_base_url: str = "https://api.glassnode.com"
     coinmetrics_metrics: list[str] = field(
         default_factory=lambda: [
             "PriceUSD",
@@ -95,6 +96,7 @@ class CryptoSourceConfig:
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
             "liquidations": {"enabled": True, "env_var": "COINGLASS_API_KEY", "required": False},
             "exchange_flows": {"enabled": True, "env_var": "CRYPTOQUANT_API_KEY", "required": False},
+            "glassnode_sth_sopr": {"enabled": True, "env_var": "GLASSNODE_API_KEY", "required": False},
         }
     )
 

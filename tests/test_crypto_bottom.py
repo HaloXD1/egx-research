@@ -552,3 +552,39 @@ def test_exchange_flows_improve_onchain_score() -> None:
     strong_scores = _component_scores(strong)
 
     assert strong_scores["onchain"].iloc[-1] > weak_scores["onchain"].iloc[-1]
+
+
+def test_sth_sopr_real_values_feed_scores() -> None:
+    rows = 140
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    close = np.linspace(100.0, 120.0, rows)
+    base = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.01,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "CapMVRVCur": np.full(rows, 1.5),
+            "FlowOutExUSD": np.full(rows, 5_000_000.0),
+            "FlowInExUSD": np.full(rows, 5_000_000.0),
+        }
+    )
+    weak = base.copy()
+    weak["onchain_sth_mvrv"] = np.full(rows, 1.2)
+    weak["onchain_sth_sopr"] = np.full(rows, 1.04)
+    weak["onchain_realized_loss_usd"] = np.full(rows, 10_000_000.0)
+    weak = _add_market_indicators(weak)
+
+    strong = base.copy()
+    strong["onchain_sth_mvrv"] = np.full(rows, 0.95)
+    strong["onchain_sth_sopr"] = np.full(rows, 0.96)
+    strong["onchain_realized_loss_usd"] = np.r_[np.full(rows - 1, 10_000_000.0), 60_000_000.0]
+    strong = _add_market_indicators(strong)
+
+    weak_scores = _component_scores(weak)
+    strong_scores = _component_scores(strong)
+
+    assert strong["sth_mvrv_source"].iloc[-1] == "real"
+    assert strong_scores["capitulation"].iloc[-1] > weak_scores["capitulation"].iloc[-1]

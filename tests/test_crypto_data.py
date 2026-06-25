@@ -21,6 +21,7 @@ from egx_research.crypto_data import (
     fetch_futures_positioning,
     fetch_liquidations,
     fetch_exchange_flows,
+    fetch_glassnode_sth_sopr,
 )
 
 
@@ -512,3 +513,24 @@ def test_fetch_exchange_flows_local_csv_aliases(tmp_path, monkeypatch) -> None:
     assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
     assert frame.iloc[1]["onchain_exchange_reserve_btc"] == 1_990_000.0
     assert frame.iloc[1]["onchain_exchange_netflow_btc"] == -2500.0
+
+
+def test_fetch_glassnode_sth_sopr_local_csv_without_key(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("GLASSNODE_API_KEY", raising=False)
+    pd.DataFrame(
+        {
+            "date": ["2024-01-01"],
+            "onchain_sth_realized_price": [38_000.0],
+            "onchain_sth_mvrv": [0.95],
+            "onchain_sth_sopr": [0.98],
+            "onchain_sopr": [0.99],
+            "onchain_realized_loss_usd": [100_000_000.0],
+            "onchain_realized_profit_usd": [25_000_000.0],
+        }
+    ).to_csv(tmp_path / "glassnode_sth_sopr.csv", index=False)
+
+    frame = fetch_glassnode_sth_sopr(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["onchain_sth_mvrv"] == 0.95

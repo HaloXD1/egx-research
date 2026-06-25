@@ -81,6 +81,8 @@ _SIGNAL_COLUMNS = [
     "onchain_exchange_reserve_btc", "onchain_exchange_netflow_btc",
     "onchain_exchange_netflow_usd", "onchain_whale_inflow_usd",
     "onchain_realized_profit_loss_exchange",
+    "onchain_sth_realized_price", "onchain_sth_mvrv", "onchain_sth_sopr",
+    "onchain_sopr", "onchain_realized_loss_usd", "onchain_realized_profit_usd",
 ]
 
 _SIGNAL_ALIASES = {
@@ -107,6 +109,12 @@ _SIGNAL_ALIASES = {
     "derivatives_liq_imbalance": "liq_imbalance",
     "derivatives_heatmap_nearest_down_liq": "heatmap_nearest_down_liq",
     "derivatives_heatmap_nearest_up_liq": "heatmap_nearest_up_liq",
+    "onchain_sth_realized_price": "sth_realized_price",
+    "onchain_sth_mvrv": "sth_mvrv",
+    "onchain_sth_sopr": "sth_sopr",
+    "onchain_sopr": "sopr",
+    "onchain_realized_loss_usd": "realized_loss_usd",
+    "onchain_realized_profit_usd": "realized_profit_usd",
 }
 
 
@@ -139,6 +147,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         "options_skew.csv": "options",
         "liquidations.csv": "derivatives",
         "exchange_flows.csv": "onchain",
+        "glassnode_sth_sopr.csv": "onchain",
     }
     for filename, prefix in optional_files.items():
         source = _load_optional_source(raw_dir, filename)
@@ -239,10 +248,40 @@ def _add_market_indicators(data: pd.DataFrame) -> pd.DataFrame:
     pv = frame["close"] * frame["volume"]
     rolling_pv = pv.rolling(155, min_periods=30).sum()
     rolling_v = frame["volume"].rolling(155, min_periods=30).sum()
-    sth_realized_price = rolling_pv / rolling_v.replace(0, np.nan)
-    sth_realized_price = sth_realized_price.fillna(frame["close"])
-    frame["sth_realized_price"] = sth_realized_price
-    frame["sth_mvrv"] = frame["close"] / sth_realized_price
+    sth_realized_price_proxy = rolling_pv / rolling_v.replace(0, np.nan)
+    sth_realized_price_proxy = sth_realized_price_proxy.fillna(frame["close"])
+    frame["sth_realized_price_proxy"] = sth_realized_price_proxy
+    frame["sth_mvrv_proxy"] = frame["close"] / sth_realized_price_proxy
+
+    # Prefer real STH realized price, fall back to proxy
+    if "onchain_sth_realized_price" in frame.columns:
+        frame["sth_realized_price"] = _safe_numeric(frame["onchain_sth_realized_price"]).fillna(sth_realized_price_proxy)
+    else:
+        frame["sth_realized_price"] = sth_realized_price_proxy
+
+    # Prefer real STH MVRV, fall back to proxy, set audit label
+    if "onchain_sth_mvrv" in frame.columns:
+        real_mvrv = _safe_numeric(frame["onchain_sth_mvrv"])
+        frame["sth_mvrv"] = real_mvrv.fillna(frame["sth_mvrv_proxy"])
+        frame["sth_mvrv_source"] = np.where(real_mvrv.notna(), "real", "proxy")
+    else:
+        frame["sth_mvrv"] = frame["sth_mvrv_proxy"]
+        frame["sth_mvrv_source"] = "proxy"
+
+    # STH SOPR fallback cascade: real STH SOPR -> real overall SOPR -> missing
+    real_sth_sopr = _optional_column(frame, "onchain_sth_sopr")
+    real_sopr = _optional_column(frame, "onchain_sopr")
+    frame["sth_sopr"] = real_sth_sopr.fillna(real_sopr)
+    frame["sth_sopr_source"] = np.where(
+        real_sth_sopr.notna(),
+        "real_sth",
+        np.where(real_sopr.notna(), "real_sopr", "missing")
+    )
+
+    # Realized Loss Climax ratio (realized loss compared to 30d average)
+    realized_loss = _optional_column(frame, "onchain_realized_loss_usd")
+    frame["realized_loss_ratio"] = realized_loss / realized_loss.rolling(30, min_periods=10).mean().replace(0, np.nan)
+
 
     days_since = []
     lows = frame["low"].to_numpy(dtype=float)
@@ -407,6 +446,19 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     wick_reversal = (_scale_between(frame["down_wick_pct"], 0.01, 0.08) * _scale_between(frame["close_location"], 0.45, 0.85))
     vol_flush = _scale_between(frame["vol30"], 0.45, 1.10)
     post_flush = _scale_between(frame["vol_compression"], -0.10, 0.35)
+    cap_signals = [drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap]
+
+    # STH SOPR capitulation (only if sth_sopr has valid data)
+    sth_sopr = frame["sth_sopr"] if "sth_sopr" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_cap = 1.0 - _scale_between(sth_sopr, 0.94, 1.02)
+        cap_signals.append(sth_sopr_cap)
+
+    # Realized Loss Climax (only if realized_loss_ratio has valid data)
+    realized_loss_ratio = frame["realized_loss_ratio"] if "realized_loss_ratio" in frame.columns else pd.Series(np.nan, index=frame.index)
+    if realized_loss_ratio.notna().any():
+        realized_loss_climax = _scale_between(realized_loss_ratio, 1.5, 6.0)
+        cap_signals.append(realized_loss_climax)
 
     # Liquidations and Heatmap features
     long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
@@ -423,10 +475,8 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     heatmap_down = _optional_column(frame, "derivatives_heatmap_nearest_down_liq")
     heatmap_risk_score = _scale_between((frame["close"] - heatmap_down) / frame["close"].replace(0, np.nan), 0.0, 0.05)
 
-    out["capitulation"] = pd.concat([
-        drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap,
-        long_liq_spike, imbalance_washout_score, heatmap_risk_score
-    ], axis=1).mean(axis=1)
+    cap_signals.extend([long_liq_spike, imbalance_washout_score, heatmap_risk_score])
+    out["capitulation"] = pd.concat(cap_signals, axis=1).mean(axis=1)
 
     derivative_signals = _derivatives_subsignals(frame)
     out["derivatives"] = derivative_signals.mean(axis=1)
@@ -491,6 +541,12 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
         onchain_signals.append(whale_inflow_score)
     if realized_capitulation.notna().any():
         onchain_signals.append(realized_capitulation)
+
+    sth_mvrv_reclaim = _scale_between(sth_mvrv, 0.98, 1.05)
+    onchain_signals.append(sth_mvrv_reclaim)
+    if "sth_sopr_source" in frame.columns and (frame["sth_sopr_source"] != "missing").any():
+        sth_sopr_reclaim = _scale_between(sth_sopr, 0.98, 1.04)
+        onchain_signals.append(sth_sopr_reclaim)
 
     out["onchain"] = pd.concat(onchain_signals, axis=1).mean(axis=1)
 

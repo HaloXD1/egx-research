@@ -531,6 +531,14 @@ def test_exchange_flows_source_metadata() -> None:
     assert "onchain_exchange_netflow_btc" in meta["required_columns"]
 
 
+def test_glassnode_sth_sopr_source_metadata() -> None:
+    assert "glassnode_sth_sopr" in SOURCE_REGISTRY
+    meta = SOURCE_REGISTRY["glassnode_sth_sopr"]
+    assert meta["filename"] == "glassnode_sth_sopr.csv"
+    assert meta["critical"] is False
+    assert "onchain_sth_sopr" in meta["required_columns"]
+
+
 def test_liquidations_optional_source_missing(tmp_path, monkeypatch) -> None:
     config = CryptoConfig()
     config.data.raw_dir = str(tmp_path / "raw")
