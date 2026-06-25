@@ -7,6 +7,7 @@ import numpy as np
 from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_sources import (
     get_source_api_key,
+    get_source_env_var,
     is_source_enabled,
     is_source_required,
     run_data_quality_checks,
@@ -80,7 +81,7 @@ def test_sync_skips_disabled_source(tmp_path, monkeypatch) -> None:
     assert summary["source_statuses"]["coinmetrics"] == "disabled"
 
 
-def test_sync_skips_missing_credentials_gracefully(tmp_path, monkeypatch) -> None:
+def test_sync_runs_public_source_without_credentials(tmp_path, monkeypatch) -> None:
     config = CryptoConfig()
     config.data.raw_dir = str(tmp_path / "raw")
     config.data.normalized_dir = str(tmp_path / "normalized")
@@ -100,6 +101,20 @@ def test_sync_skips_missing_credentials_gracefully(tmp_path, monkeypatch) -> Non
 
     # Ensure credential for coinmetrics is missing in environment
     monkeypatch.delenv("COINMETRICS_API_KEY", raising=False)
+    coinmetrics = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=5, freq="D"),
+        "CapMVRVCur": [1.1, 1.2, 1.3, 1.4, 1.5],
+        "FlowInExUSD": [10, 11, 12, 13, 14],
+        "FlowOutExUSD": [11, 12, 13, 14, 15],
+        "AdrActCnt": [100, 101, 102, 103, 104],
+        "TxCnt": [50, 51, 52, 53, 54],
+        "HashRate": [1000, 1001, 1002, 1003, 1004],
+        "SplyCur": [19000, 19001, 19002, 19003, 19004],
+    })
+    monkeypatch.setattr(
+        "egx_research.crypto_data.fetch_coinmetrics",
+        lambda c: (coinmetrics, {"source": "test"}),
+    )
     
     # Mock other fetchers to return empty dfs to speed up
     for s in SOURCE_REGISTRY:
@@ -113,7 +128,14 @@ def test_sync_skips_missing_credentials_gracefully(tmp_path, monkeypatch) -> Non
     with open(summary_path) as f:
         import json
         summary = json.load(f)
-    assert summary["source_statuses"]["coinmetrics"] == "missing_credentials"
+    assert summary["source_statuses"]["coinmetrics"] == "success"
+    assert (tmp_path / "raw" / "coinmetrics_btc.csv").exists()
+
+
+def test_config_env_var_override_is_used() -> None:
+    config = CryptoConfig()
+    config.sources.optional_sources["coinmetrics"]["env_var"] = "CUSTOM_COINMETRICS_KEY"
+    assert get_source_env_var(config, "coinmetrics") == "CUSTOM_COINMETRICS_KEY"
 
 
 def test_sync_fails_missing_credentials_if_required(tmp_path, monkeypatch) -> None:
@@ -140,6 +162,32 @@ def test_sync_fails_missing_credentials_if_required(tmp_path, monkeypatch) -> No
 
     with pytest.raises(ValueError, match="Missing credentials for required source 'coinmetrics'"):
         sync_crypto_data(config)
+
+
+def test_disabled_critical_source_is_not_penalized_as_missing(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for p in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        p.mkdir(parents=True, exist_ok=True)
+
+    config.sources.optional_sources["coinmetrics"]["enabled"] = False
+    dates = pd.date_range("2024-01-01", periods=50, freq="D")
+    panel = pd.DataFrame({
+        "date": dates,
+        "open": np.linspace(10, 20, 50),
+        "high": np.linspace(11, 21, 50),
+        "low": np.linspace(9, 19, 50),
+        "close": np.linspace(10, 20, 50),
+        "volume": np.linspace(100, 200, 50),
+    })
+    panel.to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+
+    dq = run_data_quality_checks(config, panel, dates[-1])
+
+    assert dq["source_statuses"]["coinmetrics"]["status"] == "disabled"
+    assert dq["reliability_score"] == pytest.approx(0.55)
 
 
 def test_run_data_quality_checks(tmp_path) -> None:

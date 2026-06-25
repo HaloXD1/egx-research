@@ -12,10 +12,12 @@ import requests
 from egx_research.crypto_config import CryptoConfig
 from egx_research.utils import ensure_dir, write_json
 from egx_research.crypto_sources import (
+    SOURCE_REGISTRY,
+    get_source_api_key,
+    get_source_env_var,
     is_source_enabled,
     is_source_required,
-    get_source_api_key,
-    SOURCE_REGISTRY,
+    source_requires_credentials,
 )
 
 
@@ -675,9 +677,8 @@ def _sync_optional_source(
         source_statuses[name] = "disabled"
         return
 
-    meta = SOURCE_REGISTRY[name]
-    env_var = meta["env_var"]
-    if env_var and not get_source_api_key(name, env_var):
+    env_var = get_source_env_var(config, name)
+    if env_var and source_requires_credentials(config, name) and not get_source_api_key(name, env_var):
         if is_source_required(config, name):
             raise ValueError(f"Missing credentials for required source '{name}'")
         source_statuses[name] = "missing_credentials"
@@ -732,4 +733,3 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     summary["feature_rows"] = int(len(panel))
     write_json(Path(config.data.features_dir) / "sync_summary.json", summary)
     return Path(config.data.features_path)
-

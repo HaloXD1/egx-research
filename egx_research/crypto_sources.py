@@ -132,18 +132,45 @@ def get_source_api_key(source_name: str, env_var: str) -> str | None:
     return os.getenv(env_var)
 
 
-def is_source_enabled(config: CryptoConfig, source_name: str) -> bool:
-    """Check if a source is enabled in config."""
+def get_source_config(config: CryptoConfig, source_name: str) -> dict[str, Any]:
+    """Return config for a source, with registry metadata as defaults."""
+    meta = SOURCE_REGISTRY.get(source_name, {})
     optional_srcs = getattr(config.sources, "optional_sources", {})
     src_config = optional_srcs.get(source_name, {})
-    return src_config.get("enabled", True)
+    return {
+        "enabled": src_config.get("enabled", True),
+        "required": src_config.get("required", False),
+        "env_var": src_config.get("env_var", meta.get("env_var", "")),
+        "requires_credentials": src_config.get("requires_credentials", meta.get("requires_credentials", False)),
+    }
+
+
+def is_source_enabled(config: CryptoConfig, source_name: str) -> bool:
+    """Check if a source is enabled in config."""
+    return get_source_config(config, source_name)["enabled"]
 
 
 def is_source_required(config: CryptoConfig, source_name: str) -> bool:
     """Check if a source is explicitly marked as required in config."""
-    optional_srcs = getattr(config.sources, "optional_sources", {})
-    src_config = optional_srcs.get(source_name, {})
-    return src_config.get("required", False)
+    return get_source_config(config, source_name)["required"]
+
+
+def get_source_env_var(config: CryptoConfig, source_name: str) -> str:
+    """Return configured env var for a source, allowing config overrides."""
+    return get_source_config(config, source_name)["env_var"]
+
+
+def source_requires_credentials(config: CryptoConfig, source_name: str) -> bool:
+    """Return whether missing credentials should prevent a fetch attempt."""
+    source_config = get_source_config(config, source_name)
+    return bool(source_config["required"] or source_config["requires_credentials"])
+
+
+def source_missing_required_credentials(config: CryptoConfig, source_name: str) -> bool:
+    """Check whether a source needs credentials and they are unavailable."""
+    env_var = get_source_env_var(config, source_name)
+    return bool(env_var and source_requires_credentials(config, source_name) and not get_source_api_key(source_name, env_var))
+
 
 
 def run_data_quality_checks(
@@ -178,7 +205,7 @@ def run_data_quality_checks(
             latest_date = None
             coverage_pct = 0.0
             if critical:
-                reliability_factor -= 0.15
+                warnings.append(f"Critical source '{name}' is disabled by config.")
         elif not file_exists:
             status = "missing"
             lag_hours = None
