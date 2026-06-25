@@ -58,6 +58,7 @@ class CryptoSourceConfig:
     fear_greed_url: str = "https://api.alternative.me/fng/"
     fred_base_url: str = "https://fred.stlouisfed.org/graph/fredgraph.csv"
     bitcoin_etf_flows_url: str = "https://farside.co.uk/bitcoin-etf-flow-all-data/"
+    liquidations_url: str = "https://open-api.coinglass.com/public/v2/liquidation/history"
     coinmetrics_metrics: list[str] = field(
         default_factory=lambda: [
             "PriceUSD",
@@ -90,6 +91,7 @@ class CryptoSourceConfig:
             "coinbase_premium": {"enabled": True, "env_var": "COINBASE_API_KEY", "required": False},
             "stablecoin_supply": {"enabled": True, "env_var": "DEFILLAMA_API_KEY", "required": False},
             "options_skew": {"enabled": True, "env_var": "DERIBIT_API_KEY", "required": False},
+            "liquidations": {"enabled": True, "env_var": "COINGLASS_API_KEY", "required": False},
         }
     )
 

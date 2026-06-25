@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.crypto_data import (
@@ -16,6 +17,7 @@ from egx_research.crypto_data import (
     fetch_coinbase_premium,
     fetch_stablecoin_supply,
     fetch_deribit_options,
+    fetch_liquidations,
 )
 
 
@@ -248,3 +250,101 @@ def test_fetch_deribit_options(monkeypatch) -> None:
     assert df.iloc[0]["dvol"] == 52.0
     assert df.iloc[0]["put_call_ratio"] == 0.5
     assert df.iloc[0]["options_skew"] == -0.5
+
+
+def test_parse_liquidations_payload() -> None:
+    from egx_research.crypto_data import parse_liquidations_payload
+    payload = {
+        "data": [
+            {
+                "date": 1704067200000,
+                "buyVolUsd": 500000.0,
+                "sellVolUsd": 300000.0,
+                "heatmap_down": 41000.0,
+                "heatmap_up": 43500.0
+            }
+        ]
+    }
+    df = parse_liquidations_payload(payload)
+    assert not df.empty
+    assert df.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert df.iloc[0]["long_liq_usd"] == 500000.0
+    assert df.iloc[0]["short_liq_usd"] == 300000.0
+    assert df.iloc[0]["total_liq_usd"] == 800000.0
+    assert df.iloc[0]["liq_imbalance"] == pytest.approx(0.25)
+    assert df.iloc[0]["heatmap_nearest_down_liq"] == 41000.0
+    assert df.iloc[0]["heatmap_nearest_up_liq"] == 43500.0
+
+
+def test_canonicalize_liquidations_csv(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for path in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        path.mkdir(parents=True, exist_ok=True)
+
+    # 1. Unprefixed CSV test
+    dates = pd.date_range("2024-01-01", periods=2, freq="D")
+    pd.DataFrame({
+        "date": dates,
+        "open": [10, 11],
+        "high": [11, 12],
+        "low": [9, 10],
+        "close": [10, 11],
+        "volume": [100, 110],
+    }).to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+
+    pd.DataFrame({
+        "date": dates,
+        "long_liq_usd": [5000.0, 6000.0],
+        "short_liq_usd": [2000.0, 1000.0],
+        "total_liq_usd": [7000.0, 7000.0],
+        "liq_imbalance": [0.428, 0.714],
+        "heatmap_nearest_down_liq": [9.5, 10.5],
+        "heatmap_nearest_up_liq": [10.5, 11.5]
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel1 = build_crypto_feature_panel(config)
+    assert "derivatives_long_liq_usd" in panel1.columns
+    # Check shift is applied (lag safety): index 0 has NaN (shifted), index 1 has index 0 value (5000.0)
+    assert pd.isna(panel1.iloc[0]["derivatives_long_liq_usd"])
+    assert panel1.iloc[1]["derivatives_long_liq_usd"] == 5000.0
+    assert panel1.iloc[1]["derivatives_heatmap_nearest_down_liq"] == 9.5
+
+    # 2. Already prefixed CSV test
+    pd.DataFrame({
+        "date": dates,
+        "derivatives_long_liq_usd": [7000.0, 8000.0],
+        "derivatives_short_liq_usd": [3000.0, 2000.0],
+        "derivatives_total_liq_usd": [10000.0, 10000.0],
+        "derivatives_liq_imbalance": [0.4, 0.6],
+        "derivatives_heatmap_nearest_down_liq": [9.0, 10.0],
+        "derivatives_heatmap_nearest_up_liq": [11.0, 12.0]
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+
+    panel2 = build_crypto_feature_panel(config)
+    assert "derivatives_long_liq_usd" in panel2.columns
+    assert pd.isna(panel2.iloc[0]["derivatives_long_liq_usd"])
+    assert panel2.iloc[1]["derivatives_long_liq_usd"] == 7000.0
+    assert panel2.iloc[1]["derivatives_heatmap_nearest_down_liq"] == 9.0
+
+
+def test_fetch_liquidations_uses_local_fallback_without_key(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path)
+    monkeypatch.delenv("COINGLASS_API_KEY", raising=False)
+
+    pd.DataFrame(
+        {
+            "date": [pd.Timestamp("2024-01-01")],
+            "derivatives_long_liq_usd": [1000.0],
+            "derivatives_short_liq_usd": [500.0],
+            "derivatives_total_liq_usd": [1500.0],
+            "derivatives_liq_imbalance": [1 / 3],
+        }
+    ).to_csv(tmp_path / "liquidations.csv", index=False)
+
+    frame = fetch_liquidations(config)
+    assert frame.iloc[0]["date"] == pd.Timestamp("2024-01-01")
+    assert frame.iloc[0]["long_liq_usd"] == 1000.0

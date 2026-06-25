@@ -8,6 +8,7 @@ from egx_research.crypto_bottom import (
     _add_market_indicators,
     _component_scores,
     _merge_optional_sources,
+    run_crypto_bottom_score,
 )
 from egx_research.crypto_config import CryptoConfig
 
@@ -140,3 +141,126 @@ def test_bottom_score_aliases_legacy_optional_columns(tmp_path) -> None:
     assert merged["liquidity_stablecoin_supply"].equals(merged["stablecoin_supply"])
     assert merged["options_options_skew"].equals(merged["options_skew"])
     assert merged["options_put_call_ratio"].equals(merged["put_call_ratio"])
+
+
+def test_liquidations_climax_and_imbalance_scoring() -> None:
+    # 35 days to allow min_periods=10 for rolling mean of 30 days
+    rows = 35
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    
+    # Base price
+    close = np.linspace(100, 110, rows)
+    
+    # Liquidations data
+    # 34 days of normal liquidations (100) and 1 day spike (800)
+    long_liq = np.full(rows, 100.0)
+    long_liq[-1] = 800.0  # spike
+    
+    short_liq = np.full(rows, 100.0)
+    short_liq[-1] = 50.0   # low short liq to create high imbalance
+    
+    # Nearest down heatmap is far away
+    heatmap_down = np.full(rows, 80.0)
+    
+    frame = pd.DataFrame({
+        "date": dates,
+        "open": close * 0.99,
+        "high": close * 1.01,
+        "low": close * 0.98,
+        "close": close,
+        "volume": np.full(rows, 1000.0),
+        "derivatives_liquidations_long_usd": long_liq,
+        "derivatives_short_liq_usd": short_liq,
+        "derivatives_heatmap_nearest_down_liq": heatmap_down,
+        "derivatives_liq_imbalance": np.nan,  # test fallback calculation
+    })
+    
+    # Run market indicators
+    frame_with_indicators = _add_market_indicators(frame)
+    
+    # Run component scores
+    scores = _component_scores(frame_with_indicators)
+    
+    # Check that derivatives and capitulation scores are calculated and have valid values
+    assert "derivatives" in scores.columns
+    assert "capitulation" in scores.columns
+    
+    # Calculate expected spike ratio at last index: 800 / rolling_mean
+    # rolling mean of 30 days including the spike: (29 * 100 + 800) / 30 = 3700 / 30 = 123.33
+    # spike ratio: 800 / 123.33 = 6.48x
+    # 6.48 scaled between 1.5 and 8.0: (6.48 - 1.5) / 6.5 = 4.98 / 6.5 = 0.766
+    # Let's verify that the derivatives score is higher at the spike index than the prior index
+    assert scores["derivatives"].iloc[-1] > scores["derivatives"].iloc[-2]
+    assert scores["capitulation"].iloc[-1] > scores["capitulation"].iloc[-2]
+
+
+def test_heatmap_downside_confidence_penalty(tmp_path) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for p in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        p.mkdir(parents=True, exist_ok=True)
+
+    # 150 days of data for model training
+    dates = pd.date_range("2024-01-01", periods=150, freq="D")
+    close = np.linspace(10000, 15000, 150)
+    
+    # Save base normalized price
+    pd.DataFrame({
+        "date": dates,
+        "open": close * 0.99,
+        "high": close * 1.01,
+        "low": close * 0.98,
+        "close": close,
+        "volume": np.full(150, 100000.0),
+    }).to_csv(tmp_path / "normalized" / config.data.normalized_filename, index=False)
+    
+    # Scenario A: Downside heatmap level is far away (10% lower) -> penalty factor is 1.0
+    heatmap_down_far = np.full(150, 13500.0)  # close is 15000, so 10% distance
+    pd.DataFrame({
+        "date": dates,
+        "long_liq_usd": np.full(150, 1000.0),
+        "short_liq_usd": np.full(150, 1000.0),
+        "total_liq_usd": np.full(150, 2000.0),
+        "liq_imbalance": np.full(150, 0.0),
+        "heatmap_nearest_down_liq": heatmap_down_far,
+        "heatmap_nearest_up_liq": np.full(150, 16000.0),
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+    
+    from egx_research.crypto_data import build_crypto_feature_panel
+    build_crypto_feature_panel(config)
+    
+    config_path = tmp_path / "config.yaml"
+    from egx_research.crypto_config import save_crypto_config
+    save_crypto_config(config_path, config)
+    
+    res_far = run_crypto_bottom_score(config, config_path)
+    assert res_far.summary["heatmap_penalty_factor"] == pytest.approx(1.0)
+    assert res_far.summary["best_case"]["confidence"] == res_far.summary["best_case"]["adjusted_confidence"]
+    
+    # Scenario B: Downside heatmap level is close (1% lower) -> penalty factor applied
+    heatmap_down_close = np.full(150, 14850.0)  # 15000 * 0.99 (1% distance)
+    pd.DataFrame({
+        "date": dates,
+        "long_liq_usd": np.full(150, 1000.0),
+        "short_liq_usd": np.full(150, 1000.0),
+        "total_liq_usd": np.full(150, 2000.0),
+        "liq_imbalance": np.full(150, 0.0),
+        "heatmap_nearest_down_liq": heatmap_down_close,
+        "heatmap_nearest_up_liq": np.full(150, 16000.0),
+    }).to_csv(tmp_path / "raw" / "liquidations.csv", index=False)
+    
+    build_crypto_feature_panel(config)
+    
+    res_close = run_crypto_bottom_score(config, config_path)
+    
+    # Distance is 1% (0.01). 0.01 < 0.03 threshold.
+    # Expected penalty: 1.0 - 0.15 * (1.0 - 0.01 / 0.03) = 1.0 - 0.15 * (2/3) = 1.0 - 0.10 = 0.90
+    assert res_close.summary["heatmap_penalty_factor"] == pytest.approx(0.90)
+    
+    # Check that adjusted_confidence is exactly raw_confidence * 0.90
+    best_far = res_far.summary["best_case"]
+    best_close = res_close.summary["best_case"]
+    
+    assert best_close["adjusted_confidence"] == pytest.approx(best_close["confidence"] * 0.90)

@@ -42,6 +42,7 @@ OPTIONAL_FEATURE_PREFIXES = {
     "coinbase_premium.csv": "spot",
     "stablecoin_supply.csv": "liquidity",
     "options_skew.csv": "options",
+    "liquidations.csv": "derivatives",
 }
 
 OPTIONAL_CANONICAL_COLUMNS = {
@@ -49,6 +50,14 @@ OPTIONAL_CANONICAL_COLUMNS = {
     "coinbase_premium.csv": {"spot_coinbase_close", "spot_coinbase_premium"},
     "stablecoin_supply.csv": {"liquidity_stablecoin_supply"},
     "options_skew.csv": {"options_options_skew", "options_put_call_ratio", "options_dvol"},
+    "liquidations.csv": {
+        "derivatives_long_liq_usd",
+        "derivatives_short_liq_usd",
+        "derivatives_total_liq_usd",
+        "derivatives_liq_imbalance",
+        "derivatives_heatmap_nearest_down_liq",
+        "derivatives_heatmap_nearest_up_liq",
+    },
 }
 
 CURRENT_SNAPSHOT_COLUMNS = {"options_options_skew", "options_put_call_ratio"}
@@ -551,6 +560,117 @@ def fetch_deribit_options(config: CryptoConfig) -> pd.DataFrame:
     return result[["date", "options_skew", "put_call_ratio", "dvol"]].reset_index(drop=True)
 
 
+def parse_liquidations_payload(payload: Any) -> pd.DataFrame:
+    data_list = payload
+    if isinstance(payload, dict):
+        data_list = payload.get("data", payload)
+        
+    if not isinstance(data_list, list):
+        raise ValueError("Liquidations payload data is not a list.")
+        
+    rows = []
+    for item in data_list:
+        if not isinstance(item, dict):
+            continue
+        date_raw = item.get("date") or item.get("time") or item.get("timestamp")
+        if date_raw is None:
+            continue
+        if isinstance(date_raw, (int, float)):
+            if date_raw > 1e11:
+                date_val = _utc_day(date_raw, unit="ms")
+            else:
+                date_val = _utc_day(date_raw, unit="s")
+        else:
+            date_val = _utc_day(date_raw)
+            
+        long_liq = float(item.get("long_liq_usd") or item.get("buyVolUsd") or item.get("long_liquidations") or 0.0)
+        short_liq = float(item.get("short_liq_usd") or item.get("sellVolUsd") or item.get("short_liquidations") or 0.0)
+        total_liq = float(item.get("total_liq_usd") or item.get("totalVolUsd") or (long_liq + short_liq))
+        
+        if "liq_imbalance" in item:
+            liq_imbalance = float(item["liq_imbalance"])
+        else:
+            denom = long_liq + short_liq
+            liq_imbalance = (long_liq - short_liq) / denom if denom > 0 else 0.0
+            
+        down_liq = item.get("heatmap_nearest_down_liq") or item.get("nearest_down_liq") or item.get("heatmap_down")
+        up_liq = item.get("heatmap_nearest_up_liq") or item.get("nearest_up_liq") or item.get("heatmap_up")
+        
+        row = {
+            "date": date_val,
+            "long_liq_usd": long_liq,
+            "short_liq_usd": short_liq,
+            "total_liq_usd": total_liq,
+            "liq_imbalance": liq_imbalance,
+            "heatmap_nearest_down_liq": float(down_liq) if down_liq is not None else np.nan,
+            "heatmap_nearest_up_liq": float(up_liq) if up_liq is not None else np.nan,
+        }
+        rows.append(row)
+        
+    if not rows:
+        return pd.DataFrame(columns=[
+            "date", "long_liq_usd", "short_liq_usd", "total_liq_usd",
+            "liq_imbalance", "heatmap_nearest_down_liq", "heatmap_nearest_up_liq"
+        ])
+        
+    df = pd.DataFrame(rows)
+    return df.sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+
+def fetch_liquidations(config: CryptoConfig) -> pd.DataFrame:
+    """Fetch liquidations from Coinglass or configured provider URL."""
+    columns = [
+        "date",
+        "long_liq_usd",
+        "short_liq_usd",
+        "total_liq_usd",
+        "liq_imbalance",
+        "heatmap_nearest_down_liq",
+        "heatmap_nearest_up_liq",
+    ]
+    fallback_path = Path(config.data.raw_dir) / "liquidations.csv"
+
+    def load_local_fallback() -> pd.DataFrame:
+        if not fallback_path.exists():
+            return pd.DataFrame(columns=columns)
+        frame = pd.read_csv(fallback_path, parse_dates=["date"])
+        rename_map = {
+            "derivatives_long_liq_usd": "long_liq_usd",
+            "derivatives_short_liq_usd": "short_liq_usd",
+            "derivatives_total_liq_usd": "total_liq_usd",
+            "derivatives_liq_imbalance": "liq_imbalance",
+            "derivatives_heatmap_nearest_down_liq": "heatmap_nearest_down_liq",
+            "derivatives_heatmap_nearest_up_liq": "heatmap_nearest_up_liq",
+        }
+        frame = frame.rename(columns=rename_map)
+        for column in columns:
+            if column not in frame.columns:
+                frame[column] = np.nan
+        return frame[columns].sort_values("date").drop_duplicates("date", keep="last").reset_index(drop=True)
+
+    url = getattr(config.sources, "liquidations_url", None)
+    if not url:
+        return load_local_fallback()
+        
+    api_key = get_source_api_key("liquidations", get_source_env_var(config, "liquidations"))
+    if not api_key:
+        return load_local_fallback()
+
+    headers = {}
+    headers["coinglassSecret"] = api_key
+    headers["Authorization"] = f"Bearer {api_key}"
+        
+    try:
+        response = requests.get(url, params={"symbol": "BTC"}, headers=headers, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+        return parse_liquidations_payload(payload)
+    except Exception:
+        if is_source_required(config, "liquidations"):
+            raise
+        return load_local_fallback()
+
+
 def _write_csv(path: Path, frame: pd.DataFrame) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(path, index=False)
@@ -602,6 +722,7 @@ def build_crypto_feature_panel(config: CryptoConfig) -> pd.DataFrame:
         raw_dir / "coinbase_premium.csv",
         raw_dir / "stablecoin_supply.csv",
         raw_dir / "options_skew.csv",
+        raw_dir / "liquidations.csv",
     ]
     for path in optional_files:
         if not path.exists():
@@ -690,7 +811,6 @@ def _sync_optional_source(
             summary["coinmetrics"] = cm_summary
         else:
             data = fetch_fn(config)
-        _write_csv(raw_dir / filename, data)
         if name == "funding_rates":
             rows_key = "funding_rows"
         elif name == "btc_etf_flows":
@@ -698,7 +818,11 @@ def _sync_optional_source(
         else:
             rows_key = f"{name}_rows"
         summary[rows_key] = int(len(data))
-        source_statuses[name] = "success"
+        if len(data) == 0 and not SOURCE_REGISTRY.get(name, {}).get("critical", False):
+            source_statuses[name] = "missing_optional"
+        else:
+            _write_csv(raw_dir / filename, data)
+            source_statuses[name] = "success"
     except Exception as exc:
         if is_source_required(config, name):
             raise
@@ -728,6 +852,7 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
     _sync_optional_source("coinbase_premium", fetch_coinbase_premium, config, raw_dir, "coinbase_premium.csv", summary)
     _sync_optional_source("stablecoin_supply", fetch_stablecoin_supply, config, raw_dir, "stablecoin_supply.csv", summary)
     _sync_optional_source("options_skew", fetch_deribit_options, config, raw_dir, "options_skew.csv", summary)
+    _sync_optional_source("liquidations", fetch_liquidations, config, raw_dir, "liquidations.csv", summary)
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))

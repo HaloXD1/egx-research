@@ -65,6 +65,8 @@ def _load_optional_source(raw_dir: Path, filename: str) -> pd.DataFrame | None:
 # Columns the component scoring reads via _optional_column.
 _SIGNAL_COLUMNS = [
     "funding_rate_mean", "derivatives_open_interest", "derivatives_liquidations_long_usd",
+    "derivatives_long_liq_usd", "derivatives_short_liq_usd", "derivatives_total_liq_usd",
+    "derivatives_liq_imbalance", "derivatives_heatmap_nearest_down_liq", "derivatives_heatmap_nearest_up_liq",
     "CapMVRVCur", "FlowInExUSD", "FlowOutExUSD", "AdrActCnt", "TxCnt",
     "etf_net_flow_usd", "etf_net_flow_btc", "spot_coinbase_premium",
     "liquidity_stablecoin_supply", "options_options_skew", "options_put_call_ratio",
@@ -81,6 +83,13 @@ _SIGNAL_ALIASES = {
     "options_options_skew": "options_skew",
     "options_put_call_ratio": "put_call_ratio",
     "options_dvol": "dvol",
+    "derivatives_liquidations_long_usd": "derivatives_long_liq_usd",
+    "derivatives_long_liq_usd": "long_liq_usd",
+    "derivatives_short_liq_usd": "short_liq_usd",
+    "derivatives_total_liq_usd": "total_liq_usd",
+    "derivatives_liq_imbalance": "liq_imbalance",
+    "derivatives_heatmap_nearest_down_liq": "heatmap_nearest_down_liq",
+    "derivatives_heatmap_nearest_up_liq": "heatmap_nearest_up_liq",
 }
 
 
@@ -93,6 +102,9 @@ def _apply_signal_aliases(panel: pd.DataFrame) -> pd.DataFrame:
             panel[canonical] = panel[alias]
         else:
             panel[canonical] = panel[canonical].combine_first(panel[alias])
+    # Also handle fallback mapping if raw name is in panel
+    if "long_liq_usd" in panel.columns and "derivatives_liquidations_long_usd" not in panel.columns:
+        panel["derivatives_liquidations_long_usd"] = panel["long_liq_usd"]
     return panel
 
 
@@ -106,6 +118,7 @@ def _merge_optional_sources(data: pd.DataFrame, config: CryptoConfig) -> tuple[p
         "coinbase_premium.csv": "spot",
         "stablecoin_supply.csv": "liquidity",
         "options_skew.csv": "options",
+        "liquidations.csv": "derivatives",
     }
     for filename, prefix in optional_files.items():
         source = _load_optional_source(raw_dir, filename)
@@ -251,16 +264,36 @@ def _component_scores(frame: pd.DataFrame) -> pd.DataFrame:
     wick_reversal = (_scale_between(frame["down_wick_pct"], 0.01, 0.08) * _scale_between(frame["close_location"], 0.45, 0.85))
     vol_flush = _scale_between(frame["vol30"], 0.45, 1.10)
     post_flush = _scale_between(frame["vol_compression"], -0.10, 0.35)
-    out["capitulation"] = pd.concat([drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap], axis=1).mean(axis=1)
+
+    # Liquidations and Heatmap features
+    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
+    short_liq = _optional_column(frame, "derivatives_short_liq_usd")
+    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
+
+    liq_imbalance = _optional_column(frame, "derivatives_liq_imbalance")
+    if liq_imbalance.isna().all() and not long_liq.isna().all() and not short_liq.isna().all():
+        denom = long_liq + short_liq
+        liq_imbalance = (long_liq - short_liq) / denom.replace(0, np.nan)
+        liq_imbalance = liq_imbalance.fillna(0.0)
+    imbalance_washout_score = _scale_between(liq_imbalance, 0.4, 0.9)
+
+    heatmap_down = _optional_column(frame, "derivatives_heatmap_nearest_down_liq")
+    heatmap_risk_score = _scale_between((frame["close"] - heatmap_down) / frame["close"].replace(0, np.nan), 0.0, 0.05)
+
+    out["capitulation"] = pd.concat([
+        drawdown, volume_climax, wick_reversal, vol_flush, post_flush, sth_mvrv_cap,
+        long_liq_spike, imbalance_washout_score, heatmap_risk_score
+    ], axis=1).mean(axis=1)
 
     funding = _optional_column(frame, "funding_rate_mean")
     funding_reset = _scale_between(-funding, -0.0002, 0.0015)
     funding_cooling = _scale_between(-(funding - funding.rolling(14, min_periods=5).mean()), -0.0002, 0.0008)
     oi = _optional_column(frame, "derivatives_open_interest")
     oi_flush = _scale_between(-(oi.pct_change(7)), 0.02, 0.20)
-    long_liq = _optional_column(frame, "derivatives_liquidations_long_usd")
-    long_liq_spike = _scale_between(long_liq / long_liq.rolling(30, min_periods=10).mean(), 1.5, 8.0)
-    out["derivatives"] = pd.concat([funding_reset, funding_cooling, oi_flush, long_liq_spike], axis=1).mean(axis=1)
+    out["derivatives"] = pd.concat([
+        funding_reset, funding_cooling, oi_flush,
+        long_liq_spike, imbalance_washout_score, heatmap_risk_score
+    ], axis=1).mean(axis=1)
 
     mvrv = _optional_column(frame, "CapMVRVCur")
     mvrv_cheap = 1.0 - _scale_between(mvrv, 1.0, 2.7)
@@ -610,6 +643,7 @@ def _report_html(summary: dict[str, Any], grid: pd.DataFrame, components: pd.Dat
   <div class="summary">
     <p><strong>Current read:</strong> {best['confidence_pct']:.1f}% confidence that the recent BTC low holds over {best['horizon_days']} days with a {best['tolerance_pct']:.0f}% allowed breach. Band: <strong>{html.escape(best['confidence_band'])}</strong>.</p>
     <p><strong>Recommendation:</strong> {html.escape(summary['recommendation'])}</p>
+    <p><strong>Liquidation Driver:</strong> {html.escape(summary.get('washout_driver_text', ''))}</p>
     <p><strong>Important:</strong> this is a historical probability score, not a guarantee that BTC cannot print a lower wick.</p>
   </div>
   <p>
@@ -708,6 +742,47 @@ def run_crypto_bottom_score(
     data_quality = run_data_quality_checks(config, frame, as_of)
 
 
+    # Heatmap downside penalty calculation
+    close_val = float(latest["close"])
+    down_liq = float(latest.get("derivatives_heatmap_nearest_down_liq", np.nan))
+    if pd.isna(down_liq):
+        down_liq = float(latest.get("heatmap_nearest_down_liq", np.nan))
+
+    penalty_factor = 1.0
+    if not pd.isna(down_liq) and down_liq > 0 and close_val > 0:
+        distance_pct = (close_val - down_liq) / close_val
+        if 0 < distance_pct < 0.03:
+            penalty_factor = 1.0 - 0.15 * (1.0 - distance_pct / 0.03)
+
+    # Liquidation washout check
+    long_liq_series = _optional_column(frame, "derivatives_liquidations_long_usd")
+    if long_liq_series.notna().any():
+        # rolling 3-day max of the spike
+        spike_series = long_liq_series / long_liq_series.rolling(30, min_periods=10).mean()
+        recent_spike = float(spike_series.iloc[max(0, latest_idx - 2):latest_idx + 1].max())
+    else:
+        recent_spike = 0.0
+
+    imbalance_series = _optional_column(frame, "derivatives_liq_imbalance")
+    if imbalance_series.isna().all():
+        short_liq_series = _optional_column(frame, "derivatives_short_liq_usd")
+        if long_liq_series.notna().any() and short_liq_series.notna().any():
+            denom = long_liq_series + short_liq_series
+            imbalance_series = (long_liq_series - short_liq_series) / denom.replace(0, np.nan)
+            imbalance_series = imbalance_series.fillna(0.0)
+
+    if imbalance_series.notna().any():
+        recent_imbalance = float(imbalance_series.iloc[max(0, latest_idx - 2):latest_idx + 1].max())
+    else:
+        recent_imbalance = 0.0
+
+    washout_detected = (recent_spike >= 3.0) or (recent_imbalance >= 0.7)
+
+    if washout_detected:
+        washout_text = f"Washout detected (recent spike: {recent_spike:.1f}x, imbalance: {recent_imbalance:.1%}). Recent leverage flush cleared out buyers, supporting bottom formation."
+    else:
+        washout_text = "No washout: lack of severe liquidation spikes suggests leverage is still building or calm."
+
     run_name = run_id or f"crypto-bottom-score-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / run_name)
 
@@ -717,6 +792,7 @@ def run_crypto_bottom_score(
     latest_scores = {}
     best_row: dict[str, Any] | None = None
     strict_probability = 0.0
+    strict_adjusted_probability = 0.0
 
     for horizon in HORIZONS:
         for tolerance in TOLERANCES:
@@ -728,8 +804,10 @@ def run_crypto_bottom_score(
             rule_prob, calibration_method = _calibrate_from_bins(blended_score, labels, mask, latest_score, base_rate)
             ml_prob, coefs = _fit_logistic_probability(components, labels, mask, latest_idx)
             confidence = float(_clip01(rule_prob if ml_prob is None else 0.55 * rule_prob + 0.45 * ml_prob))
+            adjusted_confidence = confidence * penalty_factor
             if horizon == 60 and tolerance == 0.05:
                 strict_probability = confidence
+                strict_adjusted_probability = adjusted_confidence
             row = {
                 "horizon_days": horizon,
                 "tolerance": tolerance,
@@ -740,7 +818,10 @@ def run_crypto_bottom_score(
                 "ml_probability": ml_prob,
                 "confidence": confidence,
                 "confidence_pct": confidence * 100,
+                "adjusted_confidence": adjusted_confidence,
+                "adjusted_confidence_pct": adjusted_confidence * 100,
                 "confidence_band": _confidence_band(confidence),
+                "adjusted_confidence_band": _confidence_band(adjusted_confidence),
                 "weighted_signal_score": latest_score,
                 "calibration_method": calibration_method,
             }
@@ -768,6 +849,7 @@ def run_crypto_bottom_score(
     best_weights = latest_scores[best_key]["weights"]
     levels = _support_resistance(latest, best_row["tolerance"])
     recommendation = _recommendation(float(best_row["confidence"]), strict_probability, latest)
+    adjusted_recommendation = _recommendation(float(best_row["adjusted_confidence"]), strict_adjusted_probability, latest)
 
     component_snapshot = [
         {
@@ -800,7 +882,11 @@ def run_crypto_bottom_score(
         },
         "best_case": best_row,
         "strict_60d_5pct_confidence": strict_probability,
+        "strict_60d_5pct_adjusted_confidence": strict_adjusted_probability,
+        "heatmap_penalty_factor": penalty_factor,
+        "washout_driver_text": washout_text,
         "recommendation": recommendation,
+        "adjusted_recommendation": adjusted_recommendation,
         "levels": levels,
         "component_snapshot": component_snapshot,
         "model_note": "Probability recent low holds inside horizon/tolerance; not a guarantee of no lower print.",

@@ -66,6 +66,10 @@ sources:
       enabled: true
       env_var: DERIBIT_API_KEY
       required: false
+    liquidations:
+      enabled: true
+      env_var: COINGLASS_API_KEY
+      required: false
 
 
 backtest:

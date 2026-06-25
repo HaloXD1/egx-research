@@ -306,3 +306,44 @@ def test_bottom_score_integration_does_not_affect_math(tmp_path) -> None:
     # but the value should not be affected by the reliability_score.
     best_row = res.summary["best_case"]
     assert best_row["confidence_pct"] == pytest.approx(best_row["confidence"] * 100)
+
+
+def test_liquidations_optional_source_missing(tmp_path, monkeypatch) -> None:
+    config = CryptoConfig()
+    config.data.raw_dir = str(tmp_path / "raw")
+    config.data.normalized_dir = str(tmp_path / "normalized")
+    config.data.features_dir = str(tmp_path / "features")
+    for p in (tmp_path / "raw", tmp_path / "normalized", tmp_path / "features"):
+        p.mkdir(parents=True, exist_ok=True)
+
+    dummy_price = pd.DataFrame({
+        "date": pd.date_range("2024-01-01", periods=5, freq="D"),
+        "open": [10, 11, 12, 13, 14],
+        "high": [11, 12, 13, 14, 15],
+        "low": [9, 10, 11, 12, 13],
+        "close": [10, 11, 12, 13, 14],
+        "volume": [100, 110, 120, 130, 140],
+    })
+    monkeypatch.setattr("egx_research.crypto_data.fetch_binance_klines", lambda c: dummy_price)
+
+    # Ensure credential for liquidations is missing in environment
+    monkeypatch.delenv("COINGLASS_API_KEY", raising=False)
+
+    # Mock other fetchers to return empty dfs to speed up
+    for s in SOURCE_REGISTRY:
+        if s not in ("binance", "liquidations"):
+            monkeypatch.setattr(
+                f"egx_research.crypto_data.fetch_{s}" if s != "options_skew" else "egx_research.crypto_data.fetch_deribit_options",
+                lambda c: pd.DataFrame(columns=["date"])
+            )
+
+    sync_crypto_data(config)
+
+    # Check sync summary status
+    summary_path = tmp_path / "features" / "sync_summary.json"
+    with open(summary_path) as f:
+        import json
+        summary = json.load(f)
+    assert summary["source_statuses"]["liquidations"] == "missing_optional"
+    assert summary["liquidations_rows"] == 0
+    assert not (tmp_path / "raw" / "liquidations.csv").exists()
