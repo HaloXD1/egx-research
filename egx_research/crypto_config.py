@@ -113,6 +113,17 @@ class CryptoSearchConfig:
 
 
 @dataclass
+class BottomQualityConfig:
+    primary_horizon_days: int = 60
+    primary_tolerance: float = 0.05
+    max_forward_drawdown: float = 0.15
+    false_bottom_penalty_enabled: bool = True
+    confirmation_required_for_adds: bool = True
+    cycle_phase_enabled: bool = True
+    tranche_policy: str = "20/30/30/20"
+
+
+@dataclass
 class CryptoConfig:
     data: CryptoDataConfig = field(default_factory=CryptoDataConfig)
     sources: CryptoSourceConfig = field(default_factory=CryptoSourceConfig)
@@ -126,6 +137,7 @@ class CryptoConfig:
         )
     )
     search: CryptoSearchConfig = field(default_factory=CryptoSearchConfig)
+    bottom_quality: BottomQualityConfig = field(default_factory=BottomQualityConfig)
     validation: ValidationConfig = field(
         default_factory=lambda: ValidationConfig(
             holdout_ratio=0.2,
@@ -160,6 +172,7 @@ def _from_dict(data: dict[str, Any]) -> CryptoConfig:
         sources=CryptoSourceConfig(**data.get("sources", {})),
         backtest=BacktestConfig(**data.get("backtest", {})),
         search=CryptoSearchConfig(**data.get("search", {})),
+        bottom_quality=BottomQualityConfig(**data.get("bottom_quality", {})),
         validation=ValidationConfig(**data.get("validation", {})),
         ranking=RankingConfig(
             weights=RankingConfig().weights.__class__(**ranking.get("weights", {})),

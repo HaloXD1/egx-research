@@ -115,6 +115,15 @@ search:
   robustness_neighbor_steps: 1
   objective_mode: walk_forward_score
 
+bottom_quality:
+  primary_horizon_days: 60
+  primary_tolerance: 0.05
+  max_forward_drawdown: 0.15
+  false_bottom_penalty_enabled: true
+  confirmation_required_for_adds: true
+  cycle_phase_enabled: true
+  tranche_policy: "20/30/30/20"
+
 validation:
   holdout_ratio: 0.2
   primary_train_bars: 1095

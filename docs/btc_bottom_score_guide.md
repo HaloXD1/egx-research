@@ -72,10 +72,13 @@ Optional keys if you intentionally enable paid or higher-limit sources:
 `egx crypto-bottom-score` writes a run under `runs/<run_id>/` with:
 
 - `bottom_score_summary.json`
+- `bottom_quality_summary.json`
 - `bottom_probability_grid.csv`
 - `bottom_component_scores.csv`
 - `bottom_feature_hitrates.csv`
 - `bottom_derivatives_audit.csv`
+- `bottom_confirmation_audit.csv`
+- `bottom_cycle_phase_audit.csv`
 - `bottom_walkforward_validation.csv`
 - `bottom_confidence_buckets.csv`
 - `bottom_driver_attribution.json`
@@ -86,6 +89,8 @@ Optional keys if you intentionally enable paid or higher-limit sources:
 ## Interpretation
 
 Confidence estimates whether the recent low holds for the selected horizon/tolerance. It is not a guarantee and can fail on exogenous shocks.
+
+The default bottom-quality view is conservative: it emphasizes the `60d / 5%` scenario, penalizes future drawdown worse than `15%`, applies a false-bottom penalty when BTC is below the 200d SMA with weak macro/no washout, and requires confirmation before sizing above probe.
 
 Confidence bands:
 
@@ -103,6 +108,8 @@ Bottom type augments confidence:
 - `dead-cat bounce risk`
 
 Recommendations are conservative mappings from confidence, regime, and bottom type. They are not financial advice.
+
+Tranche guidance uses `20/30/30/20`: probe, confirmation add, trend-reclaim add, and reserve for undercut/retest.
 
 ## Acceptance Checklist
 

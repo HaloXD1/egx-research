@@ -11,13 +11,20 @@ from egx_research.crypto_bottom import (
     _add_regime_labels,
     _bottom_type_label,
     _classify_current_bottom_type,
+    _confirmation_audit,
     _confidence_bucket_summary,
     _component_scores,
+    _cycle_phase_audit,
     _driver_attribution,
+    _false_bottom_penalty,
+    _future_quality_labels,
     _merge_optional_sources,
     _recommendation_engine,
     _scale_between,
+    _tranche_engine,
     _walk_forward_validation,
+    _washout_evidence,
+    _weekly_rsi_from_daily,
     run_crypto_bottom_score,
 )
 from egx_research.crypto_config import CryptoConfig
@@ -328,6 +335,12 @@ def test_derivatives_audit_output(tmp_path, monkeypatch) -> None:
     ]:
         assert column in audit_df.columns
         assert column in component_df.columns
+    assert (Path(run.run_dir) / "bottom_quality_summary.json").exists()
+    assert (Path(run.run_dir) / "bottom_confirmation_audit.csv").exists()
+    assert (Path(run.run_dir) / "bottom_cycle_phase_audit.csv").exists()
+    assert "tranche_plan" in run.summary
+    assert "confirmation" in run.summary
+    assert "false_bottom_penalty" in run.summary
 
 
 def test_liquidations_climax_and_imbalance_scoring() -> None:
@@ -640,6 +653,103 @@ def test_walkforward_validation_and_buckets() -> None:
     assert summary["rows"] > 0
     assert len(buckets) == 5
     assert {"low", "medium", "high", "very_high", "extreme"} == {row["bucket"] for row in buckets}
+    assert "quality_outcome" in validation.columns
+    assert "forward_drawdown_penalty" in validation.columns
+    assert "risk_adjusted_bottom_score" in validation.columns
+    assert "quality_hitrate" in buckets[0]
+
+
+def test_weekly_rsi_confirmation_and_tranche_helpers() -> None:
+    rows = 220
+    dates = pd.date_range("2024-01-01", periods=rows, freq="D")
+    close = np.r_[np.linspace(100.0, 70.0, 120), np.linspace(70.0, 125.0, 100)]
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close * 0.99,
+            "high": close * 1.02,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "funding_rate_mean": np.r_[np.full(rows - 20, -0.001), np.full(20, 0.0001)],
+        }
+    )
+    frame = _add_market_indicators(frame)
+    weekly_rsi = _weekly_rsi_from_daily(frame)
+    audit = _confirmation_audit(frame)
+    assert len(weekly_rsi) == rows
+    assert "weekly_rsi_reclaim" in audit.columns
+    assert audit.iloc[-1]["confirmation_state"] in {"early", "confirmed", "trend_reclaim"}
+
+    no_tranche = _tranche_engine(0.55, "none", "late_bear", {"invalidation_low": 60.0}, True)
+    probe = _tranche_engine(0.62, "early", "late_bear", {"invalidation_low": 60.0}, True)
+    confirmed = _tranche_engine(0.68, "confirmed", "late_bear", {"invalidation_low": 60.0}, True)
+    reclaim = _tranche_engine(0.74, "trend_reclaim", "early_recovery", {"invalidation_low": 60.0}, True)
+    assert no_tranche["eligible_allocation_pct"] == 0
+    assert probe["eligible_allocation_pct"] == 20
+    assert confirmed["eligible_allocation_pct"] == 50
+    assert reclaim["eligible_allocation_pct"] == 80
+
+
+def test_false_bottom_penalty_and_washout_override() -> None:
+    rows = 260
+    dates = pd.date_range("2025-01-01", periods=rows, freq="D")
+    close = np.r_[np.linspace(150.0, 100.0, rows - 1), 90.0]
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close,
+            "high": close * 1.01,
+            "low": close * 0.99,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "macro_vix": np.full(rows, 35.0),
+            "macro_nasdaq": np.linspace(120.0, 90.0, rows),
+            "CapMVRVCur": np.full(rows, 1.6),
+            "funding_rate_mean": np.full(rows, 0.0001),
+        }
+    )
+    frame = _add_regime_labels(_add_market_indicators(frame))
+    components = _component_scores(frame)
+    latest_idx = rows - 1
+    washout = {
+        "washout_detected": False,
+        "recent_liquidation_spike": 0.0,
+        "realized_loss_climax": False,
+        "sth_mvrv_capitulation": False,
+        "volume_climax": False,
+        "volatility_flush": False,
+    }
+    penalty = _false_bottom_penalty(frame.iloc[-1], components, latest_idx, "none", "deep_bear", washout, True)
+    assert penalty["factor"] < 1.0
+    washout["washout_detected"] = True
+    reduced = _false_bottom_penalty(frame.iloc[-1], components, latest_idx, "confirmed", "late_bear", washout, True)
+    assert reduced["factor"] == 1.0
+
+
+def test_cycle_phase_and_quality_labels() -> None:
+    rows = 1500
+    dates = pd.date_range("2021-01-01", periods=rows, freq="D")
+    close = np.r_[np.linspace(60000.0, 17000.0, 700), np.linspace(17000.0, 70000.0, 800)]
+    frame = pd.DataFrame(
+        {
+            "date": dates,
+            "open": close,
+            "high": close * 1.02,
+            "low": close * 0.98,
+            "close": close,
+            "volume": np.full(rows, 1000.0),
+            "CapMVRVCur": np.r_[np.full(700, 1.05), np.full(800, 1.8)],
+            "liquidity_stablecoin_supply": np.linspace(100_000_000.0, 180_000_000.0, rows),
+        }
+    )
+    frame = _add_market_indicators(frame)
+    cycle = _cycle_phase_audit(frame)
+    assert "cycle_phase" in cycle.columns
+    assert {"deep_bear", "late_bear", "early_recovery", "mid_cycle", "overheated"} & set(cycle["cycle_phase"])
+    quality = _future_quality_labels(frame, horizon=60, tolerance=0.05, max_drawdown=0.15)
+    assert {"quality_outcome", "forward_drawdown_penalty", "risk_adjusted_bottom_score"}.issubset(quality.columns)
+    assert quality["risk_adjusted_bottom_score"].dropna().between(0.0, 1.0).all()
 
 
 def test_bottom_type_recommendation_and_drivers() -> None:
