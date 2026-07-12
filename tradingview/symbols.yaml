@@ -1,0 +1,21 @@
+symbols:
+  - logical_symbol: EGX30_ETF
+    local_path: data/normalized/EGX30_ETF.csv
+    tradingview_symbol: EGX:EGX30ETF
+    asset_class: equity
+    quote_currency: EGP
+    timeframe: 1d
+    timezone: Africa/Cairo
+    session: EGX
+    data_source: local
+    adjustment: unknown
+  - logical_symbol: BTCUSDT
+    local_path: data/crypto/normalized/BTCUSDT_1d.csv
+    tradingview_symbol: BINANCE:BTCUSDT
+    asset_class: crypto
+    quote_currency: USDT
+    timeframe: 1d
+    timezone: UTC
+    session: 24x7
+    data_source: local
+    adjustment: spot

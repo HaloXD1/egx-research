@@ -22,6 +22,9 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
+tradingview-browser = [
+  "playwright>=1.45",
+]
 
 [project.scripts]
 egx = "egx_research.cli:app"

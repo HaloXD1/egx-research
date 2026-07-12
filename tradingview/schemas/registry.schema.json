@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://egx-research.local/schemas/tradingview-registry.json",
+  "type": "object",
+  "required": ["strategies"],
+  "properties": {
+    "strategies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "version", "pine_path", "script_kind", "logical_symbol"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+          "pine_path": {"type": "string"},
+          "script_kind": {"enum": ["strategy", "indicator"]},
+          "logical_symbol": {"type": "string", "minLength": 1},
+          "timeframe": {"type": "string"},
+          "status": {"enum": ["draft", "experimental", "validated", "paper", "production"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -16,3 +16,13 @@ data/crypto/**/*.json
 runs/*
 !runs/.gitkeep
 
+# TradingView/browser authentication and diagnostics must stay outside version control.
+tradingview/.auth/
+tradingview/.playwright/
+playwright-report/
+test-results/
+*.trace.zip
+**/storage_state.json
+data/tradingview/webhooks/*
+!data/tradingview/webhooks/.gitkeep
+archives/tradingview/

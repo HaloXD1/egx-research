@@ -1,0 +1,23 @@
+registry_path: tradingview/registry.yaml
+symbol_map_path: tradingview/symbols.yaml
+template_dir: tradingview/templates
+runs_dir: runs
+default_timezone: UTC
+crypto_config_path: config/crypto_btc.yaml
+default_max_stale_days: 2
+
+parity:
+  date_tolerance_bars: 0
+  require_full_coverage: true
+  max_missing_events: 0
+
+backtest:
+  initial_cash: 100000.0
+  monthly_contribution: 10000.0
+  fee_bps: 20.0
+  slippage_bps: 5.0
+  share_precision: 0
+
+browser:
+  enabled: false
+  engine: playwright

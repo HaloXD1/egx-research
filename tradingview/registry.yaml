@@ -1,0 +1,179 @@
+strategies:
+  - id: dca_tactical_overlay
+    version: 1.0.0
+    display_name: EGX30 ETF DCA Tactical Overlay
+    pine_path: tradingview/dca_tactical_overlay.pine
+    pine_version: 6
+    script_kind: strategy
+    source_mode: hand_authored
+    local_family: dca_tactical_overlay
+    asset_class: equity
+    logical_symbol: EGX30_ETF
+    timeframe: 1d
+    timezone: Africa/Cairo
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: true
+      actions: [buy, sell, stop]
+      warmup_bars: 38
+    execution:
+      fill_model: next_open
+      fee_bps: 20
+      slippage_bps: 5
+      share_precision: 0
+    params:
+      core_weight: 0.8
+      kama_len: 35
+      kama_fast: 5
+      kama_slow: 51
+      cci_len: 38
+      cci_threshold: 20
+      sleeve_ladder: "100_60_20"
+      atr_len: 7
+      atr_stop: 4.4
+      atr_trail: 2.6
+  - id: dca_tactical_overlay_indicator
+    version: 1.0.0
+    display_name: EGX30 ETF DCA Tactical Overlay Indicator
+    pine_path: tradingview/dca_tactical_overlay_indicator.pine
+    pine_version: 6
+    script_kind: indicator
+    source_mode: hand_authored
+    local_family: dca_tactical_overlay
+    asset_class: equity
+    logical_symbol: EGX30_ETF
+    timeframe: 1d
+    timezone: Africa/Cairo
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: true
+      actions: [buy, sell, stop]
+      warmup_bars: 38
+    params:
+      core_weight: 0.8
+      kama_len: 35
+      kama_fast: 5
+      kama_slow: 51
+      cci_len: 38
+      cci_threshold: 20
+      sleeve_ladder: "100_60_20"
+      atr_len: 7
+      atr_stop: 4.4
+      atr_trail: 2.6
+  - id: dca_pullback_only
+    version: 1.0.0
+    display_name: EGX30 ETF DCA Pullback Only
+    pine_path: tradingview/dca_pullback_only_indicator.pine
+    pine_version: 6
+    script_kind: indicator
+    source_mode: hand_authored
+    local_family: dca_pullback_only
+    asset_class: equity
+    logical_symbol: EGX30_ETF
+    timeframe: 1d
+    timezone: Africa/Cairo
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: false
+      actions: [buy, sell]
+      warmup_bars: 26
+    params:
+      kama_len: 26
+      kama_fast: 3
+      kama_slow: 52
+      cci_len: 26
+      buy_threshold: -45
+      trend_buffer_atr: 1.7
+      atr_len: 8
+  - id: crypto_donchian_breakout
+    version: 1.0.0
+    display_name: BTC Donchian Breakout
+    pine_path: tradingview/btc_donchian_breakout_strategy.pine
+    pine_version: 6
+    script_kind: strategy
+    source_mode: hand_authored
+    local_family: crypto_donchian_breakout
+    asset_class: crypto
+    logical_symbol: BTCUSDT
+    timeframe: 1d
+    timezone: UTC
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: true
+      actions: [buy, sell, stop]
+      warmup_bars: 110
+    execution:
+      fill_model: next_open
+      fee_bps: 10
+      slippage_bps: 5
+      share_precision: 8
+    params:
+      entry_lookback: 109
+      exit_lookback: 88
+      regime_ma: 110
+      atr_len: 10
+      atr_stop: 3.9
+      atr_trail: 4.6
+  - id: crypto_supertrend_combo
+    version: 1.0.0
+    display_name: BTC Supertrend Swing
+    pine_path: tradingview/btc_supertrend_combo_strategy.pine
+    pine_version: 6
+    script_kind: strategy
+    source_mode: hand_authored
+    local_family: crypto_supertrend_combo
+    asset_class: crypto
+    logical_symbol: BTCUSDT
+    timeframe: 1d
+    timezone: UTC
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: true
+      actions: [buy, sell, stop]
+      warmup_bars: 50
+    execution:
+      fill_model: next_open
+      fee_bps: 10
+      slippage_bps: 5
+      share_precision: 8
+    params:
+      st_len: 19
+      st_mult: 5.8
+      confirmation_ma: 50
+      rsi_len: 26
+      rsi_floor: 55
+      atr_len: 25
+      atr_stop: 5.6
+      atr_trail: 5.0
+  - id: crypto_trend_adx
+    version: 1.0.0
+    display_name: BTC Trend ADX
+    pine_path: tradingview/btc_trend_adx_strategy.pine
+    pine_version: 6
+    script_kind: strategy
+    source_mode: hand_authored
+    local_family: crypto_trend_adx
+    asset_class: crypto
+    logical_symbol: BTCUSDT
+    timeframe: 1d
+    timezone: UTC
+    signal_contract:
+      signal_mode: close_confirmed
+      target_exposure: true
+      actions: [buy, sell, stop]
+      warmup_bars: 95
+    execution:
+      fill_model: next_open
+      fee_bps: 10
+      slippage_bps: 5
+      share_precision: 8
+    params:
+      fast_ma: 56
+      slow_ma: 60
+      trend_ma: 95
+      ma_type: EMA
+      adx_len: 13
+      adx_threshold: 27.5
+      atr_len: 27
+      atr_stop: 5.9
+      atr_trail: 4.5

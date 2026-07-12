@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://egx-research.local/schemas/tradingview-account-request.json",
+  "type": "object",
+  "required": ["operation", "live_order_execution", "ui_steps"],
+  "properties": {
+    "operation": {"enum": ["list", "create", "update", "pause", "resume", "delete", "upload_script", "update_script", "export_strategy_tester"]},
+    "live_order_execution": {"const": false},
+    "ui_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["action"],
+        "properties": {
+          "action": {"enum": ["goto", "click", "fill", "select", "upload", "wait"]},
+          "selector": {"type": "string"},
+          "url": {"type": "string"},
+          "value": {},
+          "path": {"type": "string"},
+          "milliseconds": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}

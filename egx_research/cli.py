@@ -50,9 +50,11 @@ from egx_research.stock_strategy_validation import (
 from egx_research.stock_momentum_pyramid import (
     run_stock_momentum_pyramid_backtest,
 )
+from egx_research.tradingview.cli import tv_app
 
 
 app = typer.Typer(help="EGX30 ETF local research toolkit.")
+app.add_typer(tv_app, name="tv")
 
 
 @app.command()
