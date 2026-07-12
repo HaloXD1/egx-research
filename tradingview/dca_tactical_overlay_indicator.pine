@@ -80,7 +80,7 @@ state =
      : "DEFENSIVE"
 
 prevState = bar_index > 0 ? state[1] : state
-stateChanged = state != prevState
+stateChanged = barstate.isconfirmed and state != prevState
 
 plot(kamaLine, "KAMA", color = color.orange, linewidth = 2)
 plot(showStop ? activeStop : na, "Sleeve ATR Stop", color = color.new(color.red, 0), linewidth = 1, style = plot.style_linebr)
@@ -97,6 +97,8 @@ plotshape(stateChanged and showLabels and state == "STRONG", title = "Strong", s
 plotshape(stateChanged and showLabels and state == "NEUTRAL", title = "Neutral", style = shape.labelup, location = location.belowbar, color = color.yellow, textcolor = color.black, text = "NEUTRAL")
 plotshape(stateChanged and showLabels and state == "DEFENSIVE", title = "Defensive", style = shape.labeldown, location = location.abovebar, color = color.orange, textcolor = color.black, text = "DEF")
 plotshape(stateChanged and showLabels and state == "CORE ONLY", title = "Core Only", style = shape.labeldown, location = location.abovebar, color = color.red, textcolor = color.white, text = "CORE")
+plot(targetExposure, "egx_target_exposure", display = display.data_window)
+plot(stateChanged ? state == "CORE ONLY" ? -2.0 : state == "DEFENSIVE" ? -1.0 : state == "STRONG" ? 1.0 : 0.0 : 0.0, "egx_signal_code", display = display.data_window)
 
 var label infoLabel = na
 if barstate.islast

@@ -74,6 +74,10 @@ if stopTriggered
 targetExposure = modelTarget
 buySignal = targetExposure > 0 and nz(targetExposure[1], 0) <= 0
 sellSignal = targetExposure <= 0 and nz(targetExposure[1], 0) > 0
+signalCode = stopTriggered ? -2.0 : buySignal ? 1.0 : sellSignal ? -1.0 : 0.0
+
+plot(targetExposure, "egx_target_exposure", display = display.data_window)
+plot(signalCode, "egx_signal_code", display = display.data_window)
 matchQty = roundQty(strategy.equity * (positionSizePct / 100.0) * targetExposure / close)
 matchDelta = matchQty - strategy.position_size
 
@@ -103,3 +107,10 @@ plotchar(targetExposure * 100.0, title = "Target Exposure %", char = "", locatio
 alertcondition(buySignal, "BTC Donchian Buy", "BTC Donchian Breakout target increased to 100%.")
 alertcondition(sellSignal, "BTC Donchian Sell", "BTC Donchian Breakout target reduced to 0%.")
 alertcondition(stopTriggered, "BTC Donchian ATR Stop", "BTC Donchian Breakout ATR stop triggered.")
+
+if stopTriggered
+    alert('{"strategy":"crypto_donchian_breakout","action":"stop","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if buySignal
+    alert('{"strategy":"crypto_donchian_breakout","action":"buy","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if sellSignal
+    alert('{"strategy":"crypto_donchian_breakout","action":"sell","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)

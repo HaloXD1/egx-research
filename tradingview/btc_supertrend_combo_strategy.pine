@@ -111,7 +111,16 @@ bgcolor(showBg ? inPosition ? color.new(color.green, 88) : bullishRegime ? color
 plotshape(showSignals and entrySignal, title = "Buy", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, text = "BUY")
 plotshape(showSignals and exitSignal, title = "Sell", style = shape.triangledown, location = location.abovebar, color = color.orange, size = size.tiny, text = "SELL")
 plotshape(showSignals and stopSignal, title = "Stop", style = shape.xcross, location = location.abovebar, color = color.red, size = size.tiny, text = "STOP")
+plot(inPosition ? 1.0 : 0.0, "egx_target_exposure", display = display.data_window)
+plot(stopSignal ? -2.0 : entrySignal ? 1.0 : sellSignal ? -1.0 : 0.0, "egx_signal_code", display = display.data_window)
 
 alertcondition(entrySignal, "BTC Supertrend Swing Buy", "BTC Supertrend Swing entered a bullish pullback recovery.")
 alertcondition(exitSignal, "BTC Supertrend Swing Sell", "BTC Supertrend Swing reached high zone or broke trend.")
 alertcondition(stopSignal, "BTC Supertrend Swing Stop", "BTC Supertrend Swing ATR stop triggered.")
+
+if stopSignal
+    alert('{"strategy":"crypto_supertrend_combo","action":"stop","ticker":"' + syminfo.tickerid + '","target_exposure":0,"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if entrySignal
+    alert('{"strategy":"crypto_supertrend_combo","action":"buy","ticker":"' + syminfo.tickerid + '","target_exposure":1,"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if exitSignal
+    alert('{"strategy":"crypto_supertrend_combo","action":"sell","ticker":"' + syminfo.tickerid + '","target_exposure":0,"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)

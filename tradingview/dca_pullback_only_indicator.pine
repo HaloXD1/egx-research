@@ -37,7 +37,7 @@ buyZone = trendIntact and cciValue <= buyThreshold
 
 state = buyZone ? "BUY ZONE" : trendIntact ? "WAIT" : "TREND BROKEN"
 prevState = bar_index > 0 ? state[1] : state
-stateChanged = state != prevState
+stateChanged = barstate.isconfirmed and state != prevState
 
 plot(kamaLine, "KAMA", color = color.orange, linewidth = 2)
 plot(showBuffer ? bufferLine : na, "Trend Buffer", color = color.new(color.red, 20), linewidth = 1)
@@ -53,6 +53,8 @@ bgcolor(
 plotshape(stateChanged and showLabels and state == "BUY ZONE", title = "Buy Zone", style = shape.labelup, location = location.belowbar, color = color.lime, textcolor = color.black, text = "BUY")
 plotshape(stateChanged and showLabels and state == "WAIT", title = "Wait", style = shape.labelup, location = location.belowbar, color = color.yellow, textcolor = color.black, text = "WAIT")
 plotshape(stateChanged and showLabels and state == "TREND BROKEN", title = "Trend Broken", style = shape.labeldown, location = location.abovebar, color = color.red, textcolor = color.white, text = "BROKEN")
+plot(state == "BUY ZONE" ? 1.0 : 0.0, "egx_target_exposure", display = display.data_window)
+plot(stateChanged ? state == "BUY ZONE" ? 1.0 : state == "TREND BROKEN" ? -1.0 : 0.0 : 0.0, "egx_signal_code", display = display.data_window)
 
 var label infoLabel = na
 if barstate.islast

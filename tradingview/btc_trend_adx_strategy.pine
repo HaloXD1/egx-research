@@ -75,6 +75,10 @@ if stopTriggered
 finalExposure = rawTarget > 0 and not stoppedOut ? 1.0 : 0.0
 buySignal = finalExposure > 0 and nz(finalExposure[1], 0) <= 0
 sellSignal = finalExposure <= 0 and nz(finalExposure[1], 0) > 0
+signalCode = stopTriggered ? -2.0 : buySignal ? 1.0 : sellSignal ? -1.0 : 0.0
+
+plot(finalExposure, "egx_target_exposure", display = display.data_window)
+plot(signalCode, "egx_signal_code", display = display.data_window)
 matchQty = roundQty(strategy.equity * (positionSizePct / 100.0) * finalExposure / close)
 matchDelta = matchQty - strategy.position_size
 
@@ -104,3 +108,10 @@ plotchar(finalExposure * 100.0, title = "Target Exposure %", char = "", location
 alertcondition(buySignal, "BTC Trend ADX Buy", "BTC Trend ADX target increased to 100%.")
 alertcondition(sellSignal, "BTC Trend ADX Sell", "BTC Trend ADX target reduced to 0%.")
 alertcondition(stopTriggered, "BTC Trend ADX ATR Stop", "BTC Trend ADX ATR stop triggered.")
+
+if stopTriggered
+    alert('{"strategy":"crypto_trend_adx","action":"stop","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(finalExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if buySignal
+    alert('{"strategy":"crypto_trend_adx","action":"buy","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(finalExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if sellSignal
+    alert('{"strategy":"crypto_trend_adx","action":"sell","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(finalExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)

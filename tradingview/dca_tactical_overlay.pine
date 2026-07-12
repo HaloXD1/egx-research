@@ -104,9 +104,18 @@ bgcolor(
 plotshape(showSignals and addSignal, title = "Add", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, text = "ADD")
 plotshape(showSignals and trimSignal, title = "Trim", style = shape.triangledown, location = location.abovebar, color = color.orange, size = size.tiny, text = "TRIM")
 plotshape(showSignals and stopTriggered, title = "Stop", style = shape.xcross, location = location.abovebar, color = color.red, size = size.tiny, text = "STOP")
+plot(targetExposure, "egx_target_exposure", display = display.data_window)
+plot(stopTriggered ? -2.0 : addSignal ? 1.0 : trimSignal ? -1.0 : 0.0, "egx_signal_code", display = display.data_window)
 
 plotchar(targetExposure * 100.0, title = "Target Exposure %", char = "", location = location.top)
 
 alertcondition(addSignal, "Add Sleeve", "EGX30 ETF sleeve target increased. Add exposure.")
 alertcondition(trimSignal, "Trim Sleeve", "EGX30 ETF sleeve target decreased. Trim exposure.")
 alertcondition(stopTriggered, "Sleeve Stop", "EGX30 ETF sleeve ATR stop triggered. Drop to floor allocation.")
+
+if stopTriggered
+    alert('{"strategy":"dca_tactical_overlay","action":"stop","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if addSignal
+    alert('{"strategy":"dca_tactical_overlay","action":"buy","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
+else if trimSignal
+    alert('{"strategy":"dca_tactical_overlay","action":"sell","ticker":"' + syminfo.tickerid + '","target_exposure":' + str.tostring(targetExposure) + ',"price":' + str.tostring(close) + '}', alert.freq_once_per_bar_close)
