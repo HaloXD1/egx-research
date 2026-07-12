@@ -81,6 +81,26 @@ Track the latest BTC paper signal:
 egx crypto-paper-track --config config/crypto_btc.yaml --model-run-id crypto-btc-combo-lab-20260601 --start-date 2026-06-01 --run-id crypto-paper-btc-combo-lab
 ```
 
+TradingView/Pine research remains local-first:
+
+```bash
+egx tv strategy list
+egx tv doctor
+egx tv strategy validate --path tradingview/btc_donchian_breakout_strategy.pine
+egx tv strategy export --strategy crypto_donchian_breakout --symbol BTCUSDT --run-id tv-btc-export
+egx tv backtest --strategy crypto_donchian_breakout --symbol BTCUSDT --run-id tv-btc-smoke
+egx tv report --run-id tv-btc-smoke
+egx tv status --symbol BTCUSDT
+egx tv scan --strategy crypto_donchian_breakout --symbol BTCUSDT --refresh --run-id tv-btc-latest
+egx tv validate --strategy crypto_donchian_breakout --symbol BTCUSDT --run-id tv-btc-validation
+egx tv paper-track --strategy crypto_donchian_breakout --symbol BTCUSDT --run-id tv-btc-paper
+egx tv parity --strategy crypto_donchian_breakout --symbol BTCUSDT --pine-events /path/to/events.csv --run-id tv-btc-parity
+egx tv schedule run --strategy crypto_donchian_breakout --symbol BTCUSDT --run-id tv-daily
+egx tv run list
+```
+
+See `docs/tradingview_workflow.md` for registry, parity, data-boundary, and safety details.
+
 ## Data Format
 
 The ingestion layer supports common OHLCV exports, including:
