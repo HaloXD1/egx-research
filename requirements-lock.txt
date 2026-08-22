@@ -1,5 +1,6 @@
 # Direct dependency snapshot for reproducible research environments.
 numpy==2.4.2
+openpyxl==3.1.5
 optuna==4.8.0
 pandas==3.0.0
 plotly==6.6.0
