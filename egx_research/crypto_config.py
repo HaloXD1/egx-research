@@ -22,6 +22,7 @@ CRYPTO_FAMILIES = [
     "crypto_ensemble_overlay",
     "crypto_hierarchy_combo",
     "crypto_multisignal_score",
+    "crypto_institutional_ensemble",
 ]
 
 

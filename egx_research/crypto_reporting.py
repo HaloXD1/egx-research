@@ -84,6 +84,16 @@ def generate_crypto_report(run_id: str) -> Path:
         _table(run_dir / "crypto_regime_summary.csv"),
         "<h2>Feature Coverage</h2>",
         _table(run_dir / "crypto_feature_coverage.csv"),
+        *(
+            [
+                "<h2>Institutional Sleeve Ablation</h2>",
+                _table(run_dir / "institutional_sleeve_ablation.csv"),
+                "<h2>Institutional Latest State</h2>",
+                _table(run_dir / "institutional_current_state.csv"),
+            ]
+            if (run_dir / "institutional_current_state.csv").exists()
+            else []
+        ),
         "<h2>Parameter Importance</h2>",
         _table(run_dir / "parameter_importance.csv"),
         "</body></html>",

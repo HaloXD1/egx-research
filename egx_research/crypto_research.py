@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -24,6 +25,12 @@ from egx_research.backtest import (
 from egx_research.config import BacktestConfig
 from egx_research.crypto_config import CryptoConfig, save_crypto_config
 from egx_research.crypto_data import build_crypto_feature_panel
+from egx_research.crypto_institutional import (
+    EXTERNAL_SLEEVES,
+    INSTITUTIONAL_FAMILY,
+    INSTITUTIONAL_SLEEVES,
+    build_institutional_ensemble_frame,
+)
 from egx_research.crypto_strategies import (
     CRYPTO_PARAMETER_SPACES,
     build_crypto_neighbors,
@@ -400,6 +407,142 @@ def _copy_feature_coverage(config: CryptoConfig, run_dir: Path) -> None:
         pd.read_csv(path).to_csv(run_dir / "crypto_feature_coverage.csv", index=False)
 
 
+def _load_feature_quality(config: CryptoConfig) -> dict[str, Any]:
+    path = Path(config.data.features_dir) / "BTCUSDT_feature_quality.json"
+    if not path.exists():
+        return {
+            "present": False,
+            "point_in_time_vintage_verified": False,
+        }
+    with path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    return {"present": True, **payload}
+
+
+def _institutional_outer_ablation(
+    data: pd.DataFrame,
+    params: dict[str, Any],
+    start: int,
+    end: int,
+    config: CryptoConfig,
+    full_excess: float,
+) -> tuple[dict[str, float], dict[str, float]]:
+    full_frame = build_institutional_ensemble_frame(data, params)
+    coverage = {
+        sleeve: float(
+            full_frame[f"institutional_coverage_{sleeve}"].iloc[start : end + 1].mean()
+        )
+        for sleeve in INSTITUTIONAL_SLEEVES
+    }
+    incremental: dict[str, float] = {}
+    monthly = run_dca_benchmark(data, start, end, config.backtest)
+    for sleeve in INSTITUTIONAL_SLEEVES:
+        if coverage[sleeve] < float(params["minimum_sleeve_coverage"]):
+            continue
+        ablated_frame = build_institutional_ensemble_frame(
+            data,
+            params,
+            disabled_sleeves=[sleeve],
+        )
+        result = run_strategy_backtest(
+            ablated_frame,
+            start,
+            end,
+            config.backtest,
+        )
+        ablated_excess = float(
+            result.metrics["twr_total_return"]
+            - monthly.metrics["twr_total_return"]
+        )
+        incremental[sleeve] = float(full_excess - ablated_excess)
+    return incremental, coverage
+
+
+def _write_institutional_outputs(
+    data: pd.DataFrame,
+    candidate: dict[str, Any],
+    run_dir: Path,
+) -> None:
+    if candidate["family"] != INSTITUTIONAL_FAMILY:
+        return
+    frame = build_institutional_ensemble_frame(data, candidate["params"])
+    columns = [
+        "date",
+        "close",
+        "target_allocation",
+        "institutional_proposed_allocation",
+        "institutional_expected_return_90d",
+        "institutional_annual_expected_return",
+        "institutional_model_confidence",
+        "institutional_ensemble_score",
+        "institutional_risk_adjusted_edge",
+        "institutional_sleeve_disagreement",
+        "institutional_expected_shortfall_95_1d",
+        "institutional_external_coverage",
+        "institutional_regime",
+        "realized_volatility_30d",
+        "volatility_percentile",
+        "drawdown_365d",
+    ]
+    for sleeve in INSTITUTIONAL_SLEEVES:
+        columns.extend(
+            [
+                f"institutional_sleeve_{sleeve}",
+                f"institutional_coverage_{sleeve}",
+                f"institutional_weight_{sleeve}",
+                f"institutional_contribution_{sleeve}",
+            ]
+        )
+    columns.extend(
+        [
+            f"regime_probability_{regime}"
+            for regime in ("bull", "bear", "range", "crisis", "recovery")
+        ]
+    )
+    frame[[column for column in columns if column in frame]].to_csv(
+        run_dir / "institutional_daily_attribution.csv",
+        index=False,
+    )
+    current_columns = [
+        "date",
+        "close",
+        "target_allocation",
+        "institutional_proposed_allocation",
+        "institutional_regime",
+        "institutional_expected_return_90d",
+        "institutional_model_confidence",
+        "institutional_external_coverage",
+        "institutional_sleeve_disagreement",
+        "volatility_percentile",
+        "drawdown_365d",
+    ]
+    current_columns.extend(
+        [
+            f"institutional_contribution_{sleeve}"
+            for sleeve in INSTITUTIONAL_SLEEVES
+        ]
+    )
+    frame[[column for column in current_columns if column in frame]].tail(1).to_csv(
+        run_dir / "institutional_current_state.csv",
+        index=False,
+    )
+    rows = []
+    for fold in candidate.get("wf_rows", []):
+        for sleeve, value in fold.get("institutional_sleeve_incremental", {}).items():
+            rows.append(
+                {
+                    "window": fold["window"],
+                    "sleeve": sleeve,
+                    "incremental_excess_return": value,
+                    "coverage": fold.get("institutional_sleeve_coverage", {}).get(sleeve),
+                }
+            )
+    pd.DataFrame(rows).to_csv(
+        run_dir / "institutional_sleeve_ablation.csv",
+        index=False,
+    )
+
+
 def _window_benchmarks(
     data: pd.DataFrame,
     windows: list[Window],
@@ -416,6 +559,17 @@ def _window_benchmarks(
         }
         for index, window in enumerate(windows)
     }
+
+
+def _institutional_objective(metrics: dict[str, float]) -> float:
+    excess = float(metrics["excess_return_vs_dca"])
+    drawdown_excess = max(0.0, float(metrics["max_drawdown"]) - 0.35)
+    return float(
+        excess
+        + 0.05 * np.clip(float(metrics["return_dd"]), -2.0, 4.0)
+        + 0.05 * np.clip(float(metrics["sharpe"]), -2.0, 4.0)
+        - 2.0 * drawdown_excess
+    )
 
 
 def _optimize_family_prefix(
@@ -445,6 +599,11 @@ def _optimize_family_prefix(
         )
         for key, value in metrics.items():
             trial.set_user_attr(f"inner_{key}", float(value))
+        if family == INSTITUTIONAL_FAMILY:
+            trial.set_user_attr(
+                "institutional_objective", _institutional_objective(metrics)
+            )
+            return _institutional_objective(metrics)
         return float(metrics["score"])
 
     study.optimize(objective, n_trials=trials, show_progress_bar=False)
@@ -499,6 +658,10 @@ def run_crypto_research(
     outer_windows = build_nested_expanding_windows(
         research_end, config.validation
     )
+    feature_quality = _load_feature_quality(config)
+    external_vintages_verified = bool(
+        feature_quality.get("point_in_time_vintage_verified", False)
+    )
 
     actual_run_id = run_id or f"crypto-btc-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / actual_run_id)
@@ -552,6 +715,18 @@ def run_crypto_research(
                     "selected_params": str(params),
                 }
             )
+            if family == INSTITUTIONAL_FAMILY:
+                row["institutional_objective"] = _institutional_objective(row)
+                incremental, coverage = _institutional_outer_ablation(
+                    data,
+                    params,
+                    outer.test_start,
+                    outer.test_end,
+                    config,
+                    float(row["excess_return_vs_dca"]),
+                )
+                row["institutional_sleeve_incremental"] = incremental
+                row["institutional_sleeve_coverage"] = coverage
             outer_rows.append(row)
 
         outer_frame = pd.DataFrame(outer_rows)
@@ -590,7 +765,11 @@ def run_crypto_research(
                 config,
                 full_benchmarks,
             )
-            neighbor_scores.append(float(metrics["score"]))
+            neighbor_scores.append(
+                _institutional_objective(metrics)
+                if family == INSTITUTIONAL_FAMILY
+                else float(metrics["score"])
+            )
         neighbor_pass_rate = (
             1.0
             if not neighbor_scores
@@ -609,6 +788,78 @@ def run_crypto_research(
             >= filters.min_holdout_excess_return
             and neighbor_pass_rate >= filters.min_neighbor_pass_rate
         )
+        institutional_gates: dict[str, bool] = {}
+        incremental_value: dict[str, float] = {}
+        production_eligible = bool(passed_filters)
+        if family == INSTITUTIONAL_FAMILY:
+            positive_fold_rate = float(
+                np.mean(
+                    [
+                        float(row["excess_return_vs_dca"]) > 0.0
+                        for row in outer_rows
+                    ]
+                )
+            )
+            sleeve_coverage = {
+                sleeve: float(
+                    np.mean(
+                        [
+                            row["institutional_sleeve_coverage"].get(sleeve, 0.0)
+                            for row in outer_rows
+                        ]
+                    )
+                )
+                for sleeve in INSTITUTIONAL_SLEEVES
+            }
+            active_sleeves = [
+                sleeve
+                for sleeve, value in sleeve_coverage.items()
+                if value >= float(params["minimum_sleeve_coverage"])
+            ]
+            incremental_value = {}
+            for sleeve in active_sleeves:
+                values = [
+                    float(row["institutional_sleeve_incremental"][sleeve])
+                    for row in outer_rows
+                    if sleeve in row["institutional_sleeve_incremental"]
+                ]
+                incremental_value[sleeve] = (
+                    float(np.mean(values)) if values else -1.0
+                )
+            external_coverage = float(
+                np.mean(
+                    [
+                        sleeve_coverage.get(sleeve, 0.0)
+                        for sleeve in EXTERNAL_SLEEVES
+                    ]
+                )
+            )
+            historical_gates = {
+                "mean_outer_excess_vs_monthly_dca_at_least_3pct": float(
+                    wf_metrics["excess_return_vs_dca"]
+                )
+                >= 0.03,
+                "positive_outer_fold_rate_at_least_70pct": positive_fold_rate
+                >= 0.70,
+                "maximum_outer_drawdown_at_most_35pct": float(
+                    wf_metrics["max_drawdown"]
+                )
+                <= 0.35,
+                "all_active_sleeves_add_incremental_value": bool(active_sleeves)
+                and all(value >= -1e-9 for value in incremental_value.values()),
+                "external_sleeve_coverage_at_least_50pct": external_coverage
+                >= 0.50,
+            }
+            institutional_gates = {
+                **historical_gates,
+                "point_in_time_external_vintages_verified": external_vintages_verified,
+            }
+            passed_filters = bool(
+                passed_filters and all(historical_gates.values())
+            )
+            production_eligible = bool(
+                passed_filters and external_vintages_verified
+            )
         all_candidates.append(
             {
                 "family": family,
@@ -619,11 +870,26 @@ def run_crypto_research(
                 "neighbor_pass_rate": neighbor_pass_rate,
                 "passed_filters": passed_filters,
                 "rank_score": multiple_testing_adjusted_score(
-                    wf_metrics["score"],
+                    (
+                        float(
+                            np.mean(
+                                [
+                                    row["institutional_objective"]
+                                    for row in outer_rows
+                                ]
+                            )
+                        )
+                        if family == INSTITUTIONAL_FAMILY
+                        else wf_metrics["score"]
+                    ),
                     trials=trials,
                     independent_observations=len(outer_rows),
                 ),
                 "validation_status": "nested_expanding_presealed",
+                "institutional_gates": institutional_gates,
+                "institutional_sleeve_incremental_value": incremental_value,
+                "external_vintages_verified": external_vintages_verified,
+                "production_eligible": production_eligible,
             }
         )
 
@@ -679,6 +945,7 @@ def run_crypto_research(
     )
     _write_regime_summary(research_data, top, config, run_dir)
     _copy_feature_coverage(config, run_dir)
+    _write_institutional_outputs(data, top, run_dir)
 
     write_json(
         run_dir / "manifest.json",
@@ -697,6 +964,7 @@ def run_crypto_research(
             "objective_mode": objective_mode,
             "benchmark_primary": "monthly_dca",
             "benchmark_secondary": ["weekly_dca", "buy_hold"],
+            "feature_quality": feature_quality,
             "sealed_holdout": {
                 "start": holdout.start,
                 "end": holdout.end,
@@ -726,6 +994,17 @@ def run_crypto_research(
             "top_passed_filters": top["passed_filters"],
             "validation_status": top["validation_status"],
             "sealed_holdout_used_for_selection": False,
+            "external_data_required": top["family"] == INSTITUTIONAL_FAMILY,
+            "external_vintages_verified": top.get(
+                "external_vintages_verified", False
+            ),
+            "institutional_gates": top.get("institutional_gates", {}),
+            "institutional_sleeve_incremental_value": top.get(
+                "institutional_sleeve_incremental_value", {}
+            ),
+            "production_eligible": top.get(
+                "production_eligible", top["passed_filters"]
+            ),
         },
     )
     return actual_run_id

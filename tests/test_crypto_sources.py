@@ -79,6 +79,9 @@ def test_sync_skips_disabled_source(tmp_path, monkeypatch) -> None:
     with open(summary_path) as f:
         summary = json.load(f)
     assert summary["source_statuses"]["coinmetrics"] == "disabled"
+    vintage_manifest = Path(summary["vintage_snapshot_manifest"])
+    assert vintage_manifest.exists()
+    assert (tmp_path / "vintages" / "objects").exists()
 
 
 def test_sync_runs_public_source_without_credentials(tmp_path, monkeypatch) -> None:

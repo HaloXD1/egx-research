@@ -6,6 +6,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from egx_research.crypto_institutional import (
+    INSTITUTIONAL_FAMILY,
+    build_institutional_ensemble_frame,
+)
 from egx_research.indicators import (
     adx,
     aroon,
@@ -203,6 +207,26 @@ CRYPTO_PARAMETER_SPACES: dict[str, dict[str, dict[str, Any]]] = {
         "atr_stop": {"type": "float", "low": 1.5, "high": 6.0, "step": 0.1},
         "atr_trail": {"type": "float", "low": 1.0, "high": 5.0, "step": 0.1},
     },
+    INSTITUTIONAL_FAMILY: {
+        "core_weight": {"type": "categorical", "choices": [0.4, 0.6, 0.8]},
+        "trend_short": {"type": "int", "low": 20, "high": 60, "step": 10},
+        "trend_medium": {"type": "int", "low": 60, "high": 140, "step": 20},
+        "trend_long": {"type": "int", "low": 160, "high": 300, "step": 20},
+        "calibration_lookback": {"type": "categorical", "choices": [730, 1095, 1460]},
+        "ridge_lambda": {"type": "categorical", "choices": [0.1, 1.0, 10.0]},
+        "equal_weight_shrinkage": {"type": "categorical", "choices": [0.25, 0.5, 0.75]},
+        "maximum_sleeve_weight": {"type": "categorical", "choices": [0.2, 0.25, 0.35]},
+        "minimum_sleeve_coverage": {"type": "categorical", "choices": [0.35, 0.5, 0.65]},
+        "volatility_target": {"type": "categorical", "choices": [0.4, 0.6, 0.8]},
+        "risk_aversion": {"type": "categorical", "choices": [1.5, 3.0, 5.0]},
+        "minimum_annual_edge": {"type": "categorical", "choices": [0.0, 0.03, 0.06]},
+        "execution_cost_bps": {"type": "categorical", "choices": [10.0, 20.0, 50.0]},
+        "expected_shortfall_limit": {"type": "categorical", "choices": [0.04, 0.06, 0.08]},
+        "crisis_drawdown": {"type": "categorical", "choices": [0.15, 0.2, 0.25, 0.3]},
+        "crisis_probability": {"type": "categorical", "choices": [0.35, 0.5, 0.65]},
+        "crisis_allocation": {"type": "categorical", "choices": [0.0, 0.2, 0.4]},
+        "maximum_target_change": {"type": "categorical", "choices": [0.2, 0.4, 1.0]},
+    },
 }
 
 
@@ -253,6 +277,21 @@ def normalize_crypto_params(family: str, params: dict[str, Any]) -> dict[str, An
         normalized["mvrv_trim"] = normalized["mvrv_buy"] + 0.5
     if "fear_buy" in normalized and "greed_trim" in normalized and normalized["fear_buy"] >= normalized["greed_trim"]:
         normalized["greed_trim"] = normalized["fear_buy"] + 10.0
+    if family == INSTITUTIONAL_FAMILY:
+        horizons = sorted(
+            [
+                int(normalized["trend_short"]),
+                int(normalized["trend_medium"]),
+                int(normalized["trend_long"]),
+            ]
+        )
+        normalized["trend_short"] = horizons[0]
+        normalized["trend_medium"] = max(horizons[1], horizons[0] + 20)
+        normalized["trend_long"] = max(horizons[2], normalized["trend_medium"] + 20)
+        normalized["crisis_allocation"] = min(
+            float(normalized["crisis_allocation"]),
+            float(normalized["core_weight"]),
+        )
     return normalized
 
 
@@ -702,6 +741,9 @@ def build_crypto_strategy_frame(data: pd.DataFrame, family: str, params: dict[st
         df["crypto_sentiment_score"] = sentiment
         df["crypto_macro_score"] = macro
         df["crypto_ensemble_score"] = score
+
+    elif family == INSTITUTIONAL_FAMILY:
+        return build_institutional_ensemble_frame(df, params)
 
     else:
         raise ValueError(f"Unsupported crypto family: {family}")

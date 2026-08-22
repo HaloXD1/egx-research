@@ -125,4 +125,4 @@ docs/             # Research notes and methodology references
 
 Example outputs: `runs/backtest_inventory_20260429.md`, `runs/per-stock-returns-2020-to-date-latest.csv`, `runs/per-stock-returns-2025-to-date-latest.csv`.
 
-BTC docs: `docs/btc_first_research_run_summary.md`, `docs/btc_strategy_kpi_guide.md`, `docs/btc_mechanics_memo.md`, `docs/btc_bottom_score_guide.md`.
+BTC docs: `docs/btc_first_research_run_summary.md`, `docs/btc_strategy_kpi_guide.md`, `docs/btc_mechanics_memo.md`, `docs/btc_bottom_score_guide.md`, `docs/btc_institutional_ensemble.md`.
