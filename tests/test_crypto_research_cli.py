@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from egx_research.cli import app
 from egx_research.crypto_config import CryptoConfig, save_crypto_config
+from egx_research.crypto_research import _optimize_family_prefix
 
 
 def _features(rows: int = 240) -> pd.DataFrame:
@@ -97,6 +98,36 @@ def test_crypto_research_and_report_cli_smoke(tmp_path, monkeypatch) -> None:
     summary = json.loads((run_dir / "paper_track_summary.json").read_text())
     assert summary["status"] == "tracked"
     assert 0.0 <= summary["latest_signal"]["target_allocation"] <= 1.0
+
+
+def test_nested_inner_selection_is_unchanged_by_future_prices() -> None:
+    config = CryptoConfig()
+    config.validation.primary_train_bars = 80
+    config.validation.primary_test_bars = 30
+    config.validation.primary_step_bars = 30
+    data = _features(rows=180)
+    changed_future = data.copy()
+    changed_future.loc[140:, ["open", "high", "low", "close"]] *= 10.0
+
+    first, _, _ = _optimize_family_prefix(
+        data,
+        "crypto_dca_overlay",
+        140,
+        config,
+        trials=3,
+        seed=42,
+    )
+    second, _, _ = _optimize_family_prefix(
+        changed_future,
+        "crypto_dca_overlay",
+        140,
+        config,
+        trials=3,
+        seed=42,
+    )
+
+    assert first.best_trial.params == second.best_trial.params
+    assert first.best_value == second.best_value
 
 
 def test_crypto_bottom_score_cli_smoke(tmp_path, monkeypatch) -> None:
