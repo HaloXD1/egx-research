@@ -11,3 +11,12 @@ stablecoin_assets:
   - USDC
   - DAI
 delisting_policy: liquidate_on_last_eligible_bar
+portfolio:
+  maximum_asset_weight: 0.30
+  maximum_venue_weight: 0.80
+  maximum_quote_asset_weight: 1.00
+  target_annualized_volatility: 0.40
+  maximum_one_way_turnover: 0.25
+  maximum_adv_participation: 0.01
+  maximum_gross_exposure: 1.00
+  cash_asset: USDT
