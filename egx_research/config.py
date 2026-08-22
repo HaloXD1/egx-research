@@ -27,6 +27,7 @@ class BacktestConfig:
     fee_bps: float = 20.0
     slippage_bps: float = 5.0
     share_precision: int = 0
+    annualization_periods: float = 252.0
 
 
 @dataclass

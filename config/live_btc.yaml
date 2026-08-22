@@ -1,0 +1,26 @@
+contract_version: 1
+venue: binance_spot
+symbol: BTCUSDT
+asset_mode: spot
+direction: long_only
+leverage: 1.0
+signal:
+  interval: 1d
+  timezone: UTC
+  require_closed_candle: true
+  decision_delay_seconds: 60
+execution:
+  mode: supervised
+  algorithm: twap
+  window_minutes: 5
+  slices: 5
+  maximum_slippage_bps: 30.0
+capital:
+  maximum_target_allocation: 1.0
+  maximum_order_notional_usdt: 1000.0
+  cash_asset: USDT
+safety:
+  fail_closed: true
+  maximum_data_staleness_minutes: 10
+  maximum_cross_venue_divergence_bps: 50.0
+  manual_kill_switch_required: true

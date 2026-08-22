@@ -32,6 +32,7 @@ from egx_research.crypto_strategies import (
     sample_crypto_params,
 )
 from egx_research.optimization import aggregate_segment_summaries, score_segment
+from egx_research.reproducibility import build_run_provenance
 from egx_research.utils import ensure_dir, to_native, write_json
 from egx_research.validation import Window, build_walk_forward_windows, split_holdout
 
@@ -118,7 +119,12 @@ def run_weekly_dca_benchmark(data: pd.DataFrame, start_idx: int, end_idx: int, c
         equity=slice_equity,
         flows=slice_flows,
         trades=trades,
-        metrics=_compute_metrics(slice_equity, slice_flows, trades.iloc[0:0].copy()),
+        metrics=_compute_metrics(
+            slice_equity,
+            slice_flows,
+            trades.iloc[0:0].copy(),
+            config.annualization_periods,
+        ),
     )
 
 
@@ -562,6 +568,13 @@ def run_crypto_research(
             "objective_mode": objective_mode,
             "benchmark_primary": "monthly_dca",
             "benchmark_secondary": ["weekly_dca", "buy_hold"],
+            "provenance": build_run_provenance(
+                [
+                    config_path,
+                    config.data.features_path,
+                    config.data.normalized_path,
+                ]
+            ),
         },
     )
     write_json(run_dir / "candidates.json", {"candidates": to_native(all_candidates)})

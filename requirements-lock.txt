@@ -1,0 +1,9 @@
+# Direct dependency snapshot for reproducible research environments.
+numpy==2.4.2
+optuna==4.8.0
+pandas==3.0.0
+plotly==6.6.0
+PyYAML==6.0.3
+requests==2.32.5
+typer==0.24.1
+pytest==9.0.2

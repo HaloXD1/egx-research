@@ -1,9 +1,39 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
-from egx_research.backtest import build_contribution_schedule, run_dca_benchmark, run_strategy_backtest
+from egx_research.backtest import (
+    _build_trade_frame,
+    _compute_metrics,
+    build_contribution_schedule,
+    run_dca_benchmark,
+    run_strategy_backtest,
+)
 from egx_research.config import BacktestConfig
+
+
+def test_crypto_metrics_use_365_day_annualization() -> None:
+    daily_return = 1.10 ** (1.0 / 365.0) - 1.0
+    equity = pd.Series(100.0 * (1.0 + daily_return) ** np.arange(366))
+    flows = pd.Series([100.0] + [0.0] * 365)
+    metrics = _compute_metrics(
+        equity,
+        flows,
+        _build_trade_frame([]),
+        annualization_periods=365.0,
+    )
+    assert np.isclose(metrics["cagr"], 0.10)
+
+
+def test_annualization_periods_must_be_positive() -> None:
+    with np.testing.assert_raises_regex(ValueError, "must be positive"):
+        _compute_metrics(
+            pd.Series([100.0, 101.0]),
+            pd.Series([100.0, 0.0]),
+            _build_trade_frame([]),
+            annualization_periods=0.0,
+        )
 
 
 def test_contribution_schedule_uses_first_trading_day_in_slice() -> None:

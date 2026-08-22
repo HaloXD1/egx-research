@@ -134,6 +134,7 @@ class CryptoConfig:
             fee_bps=10.0,
             slippage_bps=5.0,
             share_precision=8,
+            annualization_periods=365.0,
         )
     )
     search: CryptoSearchConfig = field(default_factory=CryptoSearchConfig)

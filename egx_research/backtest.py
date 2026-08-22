@@ -65,7 +65,14 @@ def _build_trade_frame(trades: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(trades)
 
 
-def _compute_metrics(equity: pd.Series, flows: pd.Series, trades: pd.DataFrame) -> dict[str, float]:
+def _compute_metrics(
+    equity: pd.Series,
+    flows: pd.Series,
+    trades: pd.DataFrame,
+    annualization_periods: float = 252.0,
+) -> dict[str, float]:
+    if annualization_periods <= 0:
+        raise ValueError("annualization_periods must be positive")
     if equity.empty:
         return {
             "final_equity": 0.0,
@@ -104,10 +111,18 @@ def _compute_metrics(equity: pd.Series, flows: pd.Series, trades: pd.DataFrame) 
     if wealth.iloc[-1] <= 0:
         cagr = -1.0
     else:
-        cagr = float(wealth.iloc[-1] ** (252 / periods) - 1.0)
+        cagr = float(wealth.iloc[-1] ** (annualization_periods / periods) - 1.0)
 
     volatility = float(returns_series.iloc[1:].std(ddof=0))
-    sharpe = 0.0 if volatility == 0 else float(np.sqrt(252) * returns_series.iloc[1:].mean() / volatility)
+    sharpe = (
+        0.0
+        if volatility == 0
+        else float(
+            np.sqrt(annualization_periods)
+            * returns_series.iloc[1:].mean()
+            / volatility
+        )
+    )
     return_dd = float(cagr / max_drawdown) if max_drawdown > 0 else float(cagr)
 
     if trades.empty:
@@ -296,7 +311,12 @@ def _run_allocation_backtest(
         )
 
     trade_frame = _build_trade_frame(trades)
-    metrics = _compute_metrics(slice_equity, slice_flows, trade_frame)
+    metrics = _compute_metrics(
+        slice_equity,
+        slice_flows,
+        trade_frame,
+        config.annualization_periods,
+    )
     return BacktestResult(equity=slice_equity, flows=slice_flows, trades=trade_frame, metrics=metrics)
 
 
@@ -363,7 +383,12 @@ def _run_cash_deploy_backtest(
     slice_equity = equity.iloc[start_idx : end_idx + 1].copy()
     slice_flows = flows.iloc[start_idx : end_idx + 1].copy()
     trades = _build_trade_frame(purchases)
-    metrics = _compute_metrics(slice_equity, slice_flows, trades.iloc[0:0].copy())
+    metrics = _compute_metrics(
+        slice_equity,
+        slice_flows,
+        trades.iloc[0:0].copy(),
+        config.annualization_periods,
+    )
     return BacktestResult(equity=slice_equity, flows=slice_flows, trades=trades, metrics=metrics)
 
 
@@ -491,7 +516,12 @@ def run_strategy_backtest(
     slice_equity = equity.iloc[start_idx : end_idx + 1].copy()
     slice_flows = flows.iloc[start_idx : end_idx + 1].copy()
     trade_frame = _build_trade_frame(trades)
-    metrics = _compute_metrics(slice_equity, slice_flows, trade_frame)
+    metrics = _compute_metrics(
+        slice_equity,
+        slice_flows,
+        trade_frame,
+        config.annualization_periods,
+    )
     return BacktestResult(equity=slice_equity, flows=slice_flows, trades=trade_frame, metrics=metrics)
 
 
@@ -542,7 +572,12 @@ def run_dca_benchmark(data: pd.DataFrame, start_idx: int, end_idx: int, config: 
     slice_equity = equity.iloc[start_idx : end_idx + 1].copy()
     slice_flows = flows.iloc[start_idx : end_idx + 1].copy()
     trades = _build_trade_frame(purchase_records)
-    metrics = _compute_metrics(slice_equity, slice_flows, trades.iloc[0:0].copy())
+    metrics = _compute_metrics(
+        slice_equity,
+        slice_flows,
+        trades.iloc[0:0].copy(),
+        config.annualization_periods,
+    )
     return BacktestResult(equity=slice_equity, flows=slice_flows, trades=trades, metrics=metrics)
 
 
