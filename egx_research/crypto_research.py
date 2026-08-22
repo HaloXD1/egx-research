@@ -32,6 +32,11 @@ from egx_research.crypto_strategies import (
     sample_crypto_params,
 )
 from egx_research.optimization import aggregate_segment_summaries, score_segment
+from egx_research.nested_validation import (
+    SealedHoldout,
+    build_nested_expanding_windows,
+    multiple_testing_adjusted_score,
+)
 from egx_research.reproducibility import build_run_provenance
 from egx_research.utils import ensure_dir, to_native, write_json
 from egx_research.validation import Window, build_walk_forward_windows, split_holdout
@@ -185,53 +190,6 @@ def evaluate_crypto_holdout(
     return summary, {"strategy": result, **benchmark}
 
 
-def evaluate_crypto_candidate(
-    data: pd.DataFrame,
-    family: str,
-    params: dict[str, Any],
-    windows: list[Window],
-    holdout_start: int,
-    config: CryptoConfig,
-    window_benchmarks: dict[int, dict[str, Any]],
-    holdout_benchmark: dict[str, Any],
-    quartile_threshold: float,
-    objective_mode: str,
-    rank_value: float | None = None,
-) -> dict[str, Any]:
-    params = normalize_crypto_params(family, params)
-    wf_metrics, wf_rows = evaluate_crypto_windows(data, family, params, windows, config, window_benchmarks)
-    holdout_metrics, _ = evaluate_crypto_holdout(data, family, params, holdout_start, config, holdout_benchmark)
-
-    neighbor_scores = []
-    for neighbor in build_crypto_neighbors(family, params, config.search.robustness_neighbor_steps):
-        if objective_mode == "holdout_excess_vs_dca":
-            neighbor_metrics, _ = evaluate_crypto_holdout(data, family, neighbor, holdout_start, config, holdout_benchmark)
-            neighbor_scores.append(float(neighbor_metrics["excess_return_vs_dca"]))
-        else:
-            neighbor_metrics, _ = evaluate_crypto_windows(data, family, neighbor, windows, config, window_benchmarks)
-            neighbor_scores.append(float(neighbor_metrics["score"]))
-    neighbor_pass_rate = 1.0 if not neighbor_scores else float(np.mean([score >= quartile_threshold for score in neighbor_scores]))
-
-    filters = config.ranking.filters
-    passed_filters = (
-        wf_metrics["closed_trades"] >= filters.min_closed_trades
-        and wf_metrics["max_drawdown"] <= filters.max_drawdown
-        and wf_metrics["profit_factor"] >= filters.min_profit_factor
-        and holdout_metrics["excess_return_vs_dca"] >= filters.min_holdout_excess_return
-        and neighbor_pass_rate >= filters.min_neighbor_pass_rate
-    )
-    return {
-        "family": family,
-        "params": params,
-        "wf_metrics": wf_metrics,
-        "wf_rows": wf_rows.to_dict(orient="records"),
-        "holdout_metrics": holdout_metrics,
-        "neighbor_pass_rate": neighbor_pass_rate,
-        "passed_filters": passed_filters,
-        "rank_score": float(rank_value if rank_value is not None else wf_metrics["score"]),
-    }
-
-
 def _trial_to_row(trial: optuna.trial.FrozenTrial, family: str) -> dict[str, Any]:
     row: dict[str, Any] = {"family": family, "number": trial.number, "value": float(trial.value or 0.0)}
     for key, value in trial.params.items():
@@ -251,18 +209,15 @@ def _family_importance(study: optuna.Study, family: str) -> pd.DataFrame:
 
 
 def _candidate_selection_key(candidate: dict[str, Any]) -> tuple[Any, ...]:
-    holdout = candidate["holdout_metrics"]
     wf_metrics = candidate["wf_metrics"]
-    holdout_excess = float(holdout["excess_return_vs_dca"])
     return (
         bool(candidate["passed_filters"]),
-        holdout_excess > 0.0,
-        float(holdout["score"]),
-        holdout_excess,
-        float(holdout["sharpe"]),
-        -float(holdout["max_drawdown"]),
-        float(candidate["neighbor_pass_rate"]),
+        float(wf_metrics["excess_return_vs_dca"]) > 0.0,
+        float(candidate["rank_score"]),
         float(wf_metrics["score"]),
+        float(wf_metrics["sharpe"]),
+        -float(wf_metrics["max_drawdown"]),
+        float(candidate["neighbor_pass_rate"]),
     )
 
 
@@ -272,30 +227,28 @@ def select_crypto_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     return max(candidates, key=_candidate_selection_key)
 
 
-def _top_family_candidates(candidates: list[dict[str, Any]], family: str, top_n: int) -> list[dict[str, Any]]:
-    family_candidates = [candidate for candidate in candidates if candidate["family"] == family]
-    family_candidates.sort(key=_candidate_selection_key, reverse=True)
-    return family_candidates[:top_n]
-
-
 def _candidate_summary_frame(candidates: list[dict[str, Any]]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
                 "family": candidate["family"],
                 "rank_score": candidate["rank_score"],
-                "holdout_score": candidate["holdout_metrics"]["score"],
+                "holdout_score": candidate.get("holdout_metrics", {}).get("score", np.nan),
                 "passed_filters": candidate["passed_filters"],
                 "neighbor_pass_rate": candidate["neighbor_pass_rate"],
                 "wf_cagr": candidate["wf_metrics"]["cagr"],
                 "wf_sharpe": candidate["wf_metrics"]["sharpe"],
                 "wf_max_drawdown": candidate["wf_metrics"]["max_drawdown"],
                 "wf_excess_return_vs_dca": candidate["wf_metrics"]["excess_return_vs_dca"],
-                "holdout_cagr": candidate["holdout_metrics"]["cagr"],
-                "holdout_sharpe": candidate["holdout_metrics"]["sharpe"],
-                "holdout_max_drawdown": candidate["holdout_metrics"]["max_drawdown"],
-                "holdout_excess_return_vs_dca": candidate["holdout_metrics"]["excess_return_vs_dca"],
-                "holdout_excess_return_vs_weekly_dca": candidate["holdout_metrics"]["excess_return_vs_weekly_dca"],
+                "holdout_cagr": candidate.get("holdout_metrics", {}).get("cagr", np.nan),
+                "holdout_sharpe": candidate.get("holdout_metrics", {}).get("sharpe", np.nan),
+                "holdout_max_drawdown": candidate.get("holdout_metrics", {}).get("max_drawdown", np.nan),
+                "holdout_excess_return_vs_dca": candidate.get("holdout_metrics", {}).get(
+                    "excess_return_vs_dca", np.nan
+                ),
+                "holdout_excess_return_vs_weekly_dca": candidate.get("holdout_metrics", {}).get(
+                    "excess_return_vs_weekly_dca", np.nan
+                ),
                 "params": str(candidate["params"]),
             }
             for candidate in candidates
@@ -317,14 +270,14 @@ def _write_holdout_equity(
     family: str,
     params: dict[str, Any],
     holdout_start: int,
-    config: CryptoConfig,
+    evaluation: dict[str, Any],
     run_dir: Path,
 ) -> None:
     frame = build_crypto_strategy_frame(data, family, params)
-    strategy = run_strategy_backtest(frame, holdout_start, len(data) - 1, config.backtest)
-    monthly = run_dca_benchmark(data, holdout_start, len(data) - 1, config.backtest)
-    weekly = run_weekly_dca_benchmark(data, holdout_start, len(data) - 1, config.backtest)
-    buy_hold = run_buy_hold_benchmark(data, holdout_start, len(data) - 1) * float(strategy.flows.iloc[0])
+    strategy = evaluation["strategy"]
+    monthly = evaluation["monthly_dca"]
+    weekly = evaluation["weekly_dca"]
+    buy_hold = evaluation["buy_hold"] * float(strategy.flows.iloc[0])
     equity = pd.DataFrame(
         {
             "date": data["date"].iloc[holdout_start:].values,
@@ -447,6 +400,82 @@ def _copy_feature_coverage(config: CryptoConfig, run_dir: Path) -> None:
         pd.read_csv(path).to_csv(run_dir / "crypto_feature_coverage.csv", index=False)
 
 
+def _window_benchmarks(
+    data: pd.DataFrame,
+    windows: list[Window],
+    config: CryptoConfig,
+) -> dict[int, dict[str, Any]]:
+    return {
+        index: {
+            "monthly_dca": run_dca_benchmark(
+                data, window.test_start, window.test_end, config.backtest
+            ),
+            "weekly_dca": run_weekly_dca_benchmark(
+                data, window.test_start, window.test_end, config.backtest
+            ),
+        }
+        for index, window in enumerate(windows)
+    }
+
+
+def _optimize_family_prefix(
+    data: pd.DataFrame,
+    family: str,
+    prefix_length: int,
+    config: CryptoConfig,
+    trials: int,
+    seed: int,
+) -> tuple[optuna.Study, pd.DataFrame, list[Window]]:
+    windows, _ = build_walk_forward_windows(prefix_length, config.validation)
+    benchmarks = _window_benchmarks(data, windows, config)
+    study = optuna.create_study(
+        direction="maximize",
+        sampler=TPESampler(seed=seed),
+    )
+
+    def objective(trial: optuna.trial.Trial) -> float:
+        params = sample_crypto_params(trial, family)
+        metrics, _ = evaluate_crypto_windows(
+            data,
+            family,
+            params,
+            windows,
+            config,
+            benchmarks,
+        )
+        for key, value in metrics.items():
+            trial.set_user_attr(f"inner_{key}", float(value))
+        return float(metrics["score"])
+
+    study.optimize(objective, n_trials=trials, show_progress_bar=False)
+    return study, pd.DataFrame(
+        [_trial_to_row(trial, family) for trial in study.trials]
+    ), windows
+
+
+def _evaluate_crypto_period(
+    data: pd.DataFrame,
+    family: str,
+    params: dict[str, Any],
+    start: int,
+    end: int,
+    config: CryptoConfig,
+) -> dict[str, float]:
+    frame = build_crypto_strategy_frame(data, family, params)
+    strategy = run_strategy_backtest(frame, start, end, config.backtest)
+    monthly = run_dca_benchmark(data, start, end, config.backtest)
+    weekly = run_weekly_dca_benchmark(data, start, end, config.backtest)
+    summary = score_segment(strategy.metrics, monthly.metrics, config)
+    summary["weekly_dca_twr_total_return"] = float(
+        weekly.metrics["twr_total_return"]
+    )
+    summary["excess_return_vs_weekly_dca"] = float(
+        strategy.metrics["twr_total_return"]
+        - weekly.metrics["twr_total_return"]
+    )
+    return summary
+
+
 def run_crypto_research(
     config: CryptoConfig,
     config_path: str | Path,
@@ -459,16 +488,24 @@ def run_crypto_research(
     if len(data) < config.validation.fallback_train_bars + config.validation.fallback_test_bars:
         raise ValueError("Not enough BTC feature history for crypto research.")
 
-    research_end, holdout_bars = split_holdout(len(data), config.validation.holdout_ratio)
-    holdout_start = research_end
-    windows, window_scheme = build_walk_forward_windows(research_end, config.validation)
-    window_benchmarks, holdout_benchmark = _benchmark_payload(data, windows, holdout_start, config)
+    if objective_mode_override == "holdout_excess_vs_dca":
+        raise ValueError("sealed holdout cannot be used as an optimization objective")
+    research_end, holdout_bars = split_holdout(
+        len(data), config.validation.holdout_ratio
+    )
+    holdout = SealedHoldout[tuple[dict[str, float], dict[str, Any]]](
+        research_end, len(data) - 1
+    )
+    outer_windows = build_nested_expanding_windows(
+        research_end, config.validation
+    )
 
     actual_run_id = run_id or f"crypto-btc-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}"
     run_dir = ensure_dir(Path("runs") / actual_run_id)
     save_crypto_config(run_dir / "config_snapshot.yaml", config)
-    objective_mode = objective_mode_override or config.search.objective_mode
+    objective_mode = "nested_expanding_score"
     families = [family_override] if family_override else list(config.search.families)
+    trials = trials_override or config.search.trials_per_family
     all_candidates: list[dict[str, Any]] = []
     importance_frames: list[pd.DataFrame] = []
 
@@ -481,31 +518,56 @@ def run_crypto_research(
                 "test_start_date": str(data["date"].iloc[window.test_start].date()),
                 "test_end_date": str(data["date"].iloc[window.test_end].date()),
             }
-            for window in windows
+            for window in outer_windows
         ]
     )
-    windows_frame.to_csv(run_dir / "walk_forward_windows.csv", index=False)
+    windows_frame.to_csv(run_dir / "nested_outer_windows.csv", index=False)
 
     for family_index, family in enumerate(families):
         if family not in CRYPTO_PARAMETER_SPACES:
             raise ValueError(f"Unknown crypto family: {family}")
-        sampler = TPESampler(seed=config.search.random_seed + family_index)
-        study = optuna.create_study(direction="maximize", sampler=sampler)
+        outer_rows: list[dict[str, Any]] = []
+        for fold_index, outer in enumerate(outer_windows):
+            fold_study, _, inner_windows = _optimize_family_prefix(
+                data,
+                family,
+                outer.train_end + 1,
+                config,
+                trials,
+                config.search.random_seed + family_index * 1000 + fold_index,
+            )
+            params = normalize_crypto_params(family, fold_study.best_trial.params)
+            row = _evaluate_crypto_period(
+                data,
+                family,
+                params,
+                outer.test_start,
+                outer.test_end,
+                config,
+            )
+            row.update(
+                {
+                    "window": fold_index,
+                    "inner_window_count": len(inner_windows),
+                    "selected_params": str(params),
+                }
+            )
+            outer_rows.append(row)
 
-        def objective(trial: optuna.trial.Trial) -> float:
-            params = sample_crypto_params(trial, family)
-            wf_metrics, _ = evaluate_crypto_windows(data, family, params, windows, config, window_benchmarks)
-            holdout_metrics, _ = evaluate_crypto_holdout(data, family, params, holdout_start, config, holdout_benchmark)
-            for key, value in wf_metrics.items():
-                trial.set_user_attr(f"wf_{key}", float(value))
-            for key, value in holdout_metrics.items():
-                trial.set_user_attr(f"holdout_{key}", float(value))
-            if objective_mode == "holdout_excess_vs_dca":
-                return float(holdout_metrics["excess_return_vs_dca"])
-            return float(wf_metrics["score"])
+        outer_frame = pd.DataFrame(outer_rows)
+        outer_frame.to_csv(
+            run_dir / f"nested_outer_{family}.csv", index=False
+        )
+        wf_metrics = aggregate_segment_summaries(outer_rows)
 
-        study.optimize(objective, n_trials=trials_override or config.search.trials_per_family, show_progress_bar=False)
-        trials_frame = pd.DataFrame([_trial_to_row(trial, family) for trial in study.trials])
+        study, trials_frame, full_inner_windows = _optimize_family_prefix(
+            data,
+            family,
+            research_end,
+            config,
+            trials,
+            config.search.random_seed + 100_000 + family_index,
+        )
         trials_frame.to_csv(run_dir / f"trials_{family}.csv", index=False)
 
         importance_frame = _family_importance(study, family)
@@ -513,45 +575,109 @@ def run_crypto_research(
         if not importance_frame.empty:
             importance_frame.to_csv(run_dir / f"importance_{family}.csv", index=False)
 
-        quartile_threshold = float(trials_frame["value"].quantile(0.75)) if not trials_frame.empty else 0.0
-        top_rows = trials_frame.sort_values("value", ascending=False).head(config.search.top_candidates_per_family)
-        for _, row in top_rows.iterrows():
-            params = {key.replace("param_", ""): row[key] for key in row.index if key.startswith("param_")}
-            all_candidates.append(
-                evaluate_crypto_candidate(
-                    data=data,
-                    family=family,
-                    params=params,
-                    windows=windows,
-                    holdout_start=holdout_start,
-                    config=config,
-                    window_benchmarks=window_benchmarks,
-                    holdout_benchmark=holdout_benchmark,
-                    quartile_threshold=quartile_threshold,
-                    objective_mode=objective_mode,
-                    rank_value=float(row["value"]),
+        params = normalize_crypto_params(family, study.best_trial.params)
+        full_benchmarks = _window_benchmarks(data, full_inner_windows, config)
+        quartile_threshold = float(trials_frame["value"].quantile(0.75))
+        neighbor_scores = []
+        for neighbor in build_crypto_neighbors(
+            family, params, config.search.robustness_neighbor_steps
+        ):
+            metrics, _ = evaluate_crypto_windows(
+                data,
+                family,
+                neighbor,
+                full_inner_windows,
+                config,
+                full_benchmarks,
+            )
+            neighbor_scores.append(float(metrics["score"]))
+        neighbor_pass_rate = (
+            1.0
+            if not neighbor_scores
+            else float(
+                np.mean(
+                    [score >= quartile_threshold for score in neighbor_scores]
                 )
             )
+        )
+        filters = config.ranking.filters
+        passed_filters = (
+            wf_metrics["closed_trades"] >= filters.min_closed_trades
+            and wf_metrics["max_drawdown"] <= filters.max_drawdown
+            and wf_metrics["profit_factor"] >= filters.min_profit_factor
+            and wf_metrics["excess_return_vs_dca"]
+            >= filters.min_holdout_excess_return
+            and neighbor_pass_rate >= filters.min_neighbor_pass_rate
+        )
+        all_candidates.append(
+            {
+                "family": family,
+                "params": params,
+                "wf_metrics": wf_metrics,
+                "wf_rows": outer_rows,
+                "holdout_metrics": {},
+                "neighbor_pass_rate": neighbor_pass_rate,
+                "passed_filters": passed_filters,
+                "rank_score": multiple_testing_adjusted_score(
+                    wf_metrics["score"],
+                    trials=trials,
+                    independent_observations=len(outer_rows),
+                ),
+                "validation_status": "nested_expanding_presealed",
+            }
+        )
 
     if not all_candidates:
         raise ValueError("No crypto candidates were produced.")
     all_candidates.sort(key=_candidate_selection_key, reverse=True)
-    top10 = all_candidates[:10]
-    top3_per_family = []
-    for family in families:
-        top3_per_family.extend(_top_family_candidates(all_candidates, family, 3))
-
-    _candidate_summary_frame(top10).to_csv(run_dir / "top10_overall.csv", index=False)
-    _candidate_summary_frame(top3_per_family).to_csv(run_dir / "top3_per_family.csv", index=False)
+    top = select_crypto_candidate(all_candidates)
+    holdout_metrics, holdout_payload = holdout.evaluate_once(
+        lambda start, _end: evaluate_crypto_holdout(
+            data,
+            top["family"],
+            top["params"],
+            start,
+            config,
+            _benchmark_payload(data, [], start, config)[1],
+        )
+    )
+    top["holdout_metrics"] = holdout_metrics
+    top["sealed_holdout_evaluated"] = holdout.used
+    _candidate_summary_frame(all_candidates[:10]).to_csv(
+        run_dir / "top10_overall.csv", index=False
+    )
+    _candidate_summary_frame(all_candidates).to_csv(
+        run_dir / "top3_per_family.csv", index=False
+    )
     importance_all = pd.concat(importance_frames, ignore_index=True) if importance_frames else pd.DataFrame()
     if not importance_all.empty:
         importance_all.to_csv(run_dir / "parameter_importance.csv", index=False)
 
-    top = select_crypto_candidate(all_candidates)
-    _write_holdout_equity(data, top["family"], top["params"], holdout_start, config, run_dir)
-    _write_ablation_summary(data, top, holdout_start, config, holdout_benchmark, run_dir)
-    _write_cost_stress(data, top, holdout_start, config, run_dir)
-    _write_regime_summary(data, top, config, run_dir)
+    _write_holdout_equity(
+        data,
+        top["family"],
+        top["params"],
+        research_end,
+        holdout_payload,
+        run_dir,
+    )
+    research_data = data.iloc[:research_end].reset_index(drop=True)
+    validation_start = outer_windows[-1].test_start
+    presealed_benchmark = _benchmark_payload(
+        research_data, [], validation_start, config
+    )[1]
+    _write_ablation_summary(
+        research_data,
+        top,
+        validation_start,
+        config,
+        presealed_benchmark,
+        run_dir,
+    )
+    _write_cost_stress(
+        research_data, top, validation_start, config, run_dir
+    )
+    _write_regime_summary(research_data, top, config, run_dir)
     _copy_feature_coverage(config, run_dir)
 
     write_json(
@@ -564,10 +690,19 @@ def run_crypto_research(
             "normalized_path": config.data.normalized_path,
             "families": families,
             "holdout_bars": holdout_bars,
-            "window_scheme": window_scheme,
+            "window_scheme": "nested_expanding",
+            "outer_fold_count": len(outer_windows),
+            "purge_bars": config.validation.purge_bars,
+            "embargo_bars": config.validation.embargo_bars,
             "objective_mode": objective_mode,
             "benchmark_primary": "monthly_dca",
             "benchmark_secondary": ["weekly_dca", "buy_hold"],
+            "sealed_holdout": {
+                "start": holdout.start,
+                "end": holdout.end,
+                "evaluated_once": holdout.used,
+                "used_for_selection": False,
+            },
             "provenance": build_run_provenance(
                 [
                     config_path,
@@ -588,6 +723,9 @@ def run_crypto_research(
             "top_holdout_score": top["holdout_metrics"]["score"],
             "holdout_excess_return_vs_dca": top["holdout_metrics"]["excess_return_vs_dca"],
             "holdout_excess_return_vs_weekly_dca": top["holdout_metrics"]["excess_return_vs_weekly_dca"],
+            "top_passed_filters": top["passed_filters"],
+            "validation_status": top["validation_status"],
+            "sealed_holdout_used_for_selection": False,
         },
     )
     return actual_run_id

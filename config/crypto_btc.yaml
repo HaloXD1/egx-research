@@ -133,6 +133,10 @@ validation:
   fallback_train_bars: 365
   fallback_test_bars: 180
   fallback_step_bars: 90
+  outer_test_bars: 365
+  outer_step_bars: 365
+  purge_bars: 5
+  embargo_bars: 5
 
 ranking:
   weights:

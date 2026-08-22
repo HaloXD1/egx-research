@@ -49,6 +49,10 @@ class ValidationConfig:
     fallback_train_bars: int = 504
     fallback_test_bars: int = 126
     fallback_step_bars: int = 63
+    outer_test_bars: int = 0
+    outer_step_bars: int = 0
+    purge_bars: int = 0
+    embargo_bars: int = 0
 
 
 @dataclass
