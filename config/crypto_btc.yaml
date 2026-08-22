@@ -110,6 +110,7 @@ search:
     - crypto_ensemble_overlay
     - crypto_hierarchy_combo
     - crypto_multisignal_score
+    - crypto_institutional_ensemble
   trials_per_family: 150
   top_candidates_per_family: 8
   random_seed: 42

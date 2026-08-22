@@ -11,7 +11,13 @@ import pandas as pd
 
 from egx_research.backtest import run_buy_hold_benchmark, run_dca_benchmark, run_strategy_backtest
 from egx_research.crypto_config import CryptoConfig, load_crypto_config
-from egx_research.crypto_research import load_crypto_feature_data, run_weekly_dca_benchmark, select_crypto_candidate
+from egx_research.crypto_institutional import INSTITUTIONAL_FAMILY, INSTITUTIONAL_SLEEVES
+from egx_research.crypto_research import (
+    _load_feature_quality,
+    load_crypto_feature_data,
+    run_weekly_dca_benchmark,
+    select_crypto_candidate,
+)
 from egx_research.crypto_strategies import build_crypto_strategy_frame
 from egx_research.indicators import ema, kama, sma
 from egx_research.utils import ensure_dir, to_native, write_json
@@ -108,6 +114,43 @@ def _family_diagnostics(frame: pd.DataFrame, family: str, params: dict[str, Any]
                 "close_above_btc_trend_ma": bool(close.iloc[-1] > btc_trend.iloc[-1]),
             }
         )
+    elif family == INSTITUTIONAL_FAMILY:
+        for column in (
+            "institutional_regime",
+            "institutional_expected_return_90d",
+            "institutional_annual_expected_return",
+            "institutional_model_confidence",
+            "institutional_ensemble_score",
+            "institutional_risk_adjusted_edge",
+            "institutional_sleeve_disagreement",
+            "institutional_expected_shortfall_95_1d",
+            "institutional_external_coverage",
+            "institutional_proposed_allocation",
+            "realized_volatility_30d",
+            "volatility_percentile",
+            "drawdown_365d",
+        ):
+            value = latest.get(column)
+            diagnostics[column] = (
+                float(value)
+                if isinstance(value, (int, float, np.integer, np.floating))
+                and pd.notna(value)
+                else value
+            )
+        for regime_name in ("bull", "bear", "range", "crisis", "recovery"):
+            column = f"regime_probability_{regime_name}"
+            value = latest.get(column)
+            diagnostics[column] = float(value) if pd.notna(value) else None
+        for sleeve in INSTITUTIONAL_SLEEVES:
+            diagnostics[f"sleeve_{sleeve}"] = float(
+                latest.get(f"institutional_sleeve_{sleeve}", 0.0)
+            )
+            diagnostics[f"weight_{sleeve}"] = float(
+                latest.get(f"institutional_weight_{sleeve}", 0.0)
+            )
+            diagnostics[f"contribution_{sleeve}"] = float(
+                latest.get(f"institutional_contribution_{sleeve}", 0.0)
+            )
 
     for column in ("macro_nasdaq", "macro_us10y", "macro_dollar", "macro_fed_liquidity", "macro_vix"):
         if column in frame:
@@ -156,6 +199,30 @@ def build_current_crypto_signal(frame: pd.DataFrame, family: str, params: dict[s
                 reasons.append("fast EMA is not above slow EMA")
             if not diagnostics.get("close_above_trend_ma"):
                 reasons.append("BTC closed below trend MA")
+    elif family == INSTITUTIONAL_FAMILY:
+        reasons.append(
+            f"institutional regime is {diagnostics.get('institutional_regime', 'unknown')}"
+        )
+        reasons.append(
+            "90-day expected return is "
+            f"{float(diagnostics.get('institutional_expected_return_90d') or 0.0):.2%} "
+            f"at {float(diagnostics.get('institutional_model_confidence') or 0.0):.0%} confidence"
+        )
+        contributions = sorted(
+            (
+                (
+                    sleeve,
+                    float(diagnostics.get(f"contribution_{sleeve}") or 0.0),
+                )
+                for sleeve in INSTITUTIONAL_SLEEVES
+            ),
+            key=lambda item: abs(item[1]),
+            reverse=True,
+        )[:3]
+        reasons.append(
+            "largest sleeve contributions: "
+            + ", ".join(f"{name} {value:+.2f}" for name, value in contributions)
+        )
     else:
         if target > floor:
             reasons.append("model target is above defensive floor")
@@ -169,7 +236,11 @@ def build_current_crypto_signal(frame: pd.DataFrame, family: str, params: dict[s
         "family": family,
         "signal": regime,
         "action": action,
-        "execution_timing": "next_daily_open_after_latest_close",
+        "execution_timing": (
+            "next_verified_execution_window"
+            if family == INSTITUTIONAL_FAMILY
+            else "next_daily_open_after_latest_close"
+        ),
         "target_allocation": target,
         "previous_target_allocation": previous_target,
         "target_allocation_change": delta,
@@ -287,6 +358,16 @@ def _recent_signal_frame(frame: pd.DataFrame, lookback: int = 120) -> pd.DataFra
         "exit_signal",
         "signal",
     ]
+    columns.extend(
+        [
+            "institutional_regime",
+            "institutional_expected_return_90d",
+            "institutional_model_confidence",
+            "institutional_external_coverage",
+            "volatility_percentile",
+            "drawdown_365d",
+        ]
+    )
     return recent[[column for column in columns if column in recent.columns]].reset_index(drop=True)
 
 
@@ -304,6 +385,15 @@ def paper_track_crypto_strategy(
         raise ValueError("No BTC feature data available. Run crypto-sync first.")
 
     candidate = _best_crypto_candidate(model_run_id)
+    feature_quality = _load_feature_quality(config)
+    external_vintages_verified = bool(
+        feature_quality.get("point_in_time_vintage_verified", False)
+    )
+    model_accepted = bool(
+        candidate.get("production_eligible", candidate.get("passed_filters", False))
+    )
+    if candidate["family"] == INSTITUTIONAL_FAMILY:
+        model_accepted = bool(model_accepted and external_vintages_verified)
     frame = build_crypto_strategy_frame(data, candidate["family"], candidate["params"])
     latest_date = pd.Timestamp(data["date"].iloc[-1])
     start_ts = pd.Timestamp(start_date)
@@ -325,14 +415,27 @@ def paper_track_crypto_strategy(
         "features_path": config.data.features_path,
         "normalized_path": config.data.normalized_path,
         "data_freshness": freshness,
+        "model_accepted": model_accepted,
+        "external_vintages_verified": external_vintages_verified,
     }
 
     if start_ts > latest_date:
+        block_reasons = ["waiting_for_future_data"]
+        if freshness["status"] != "fresh":
+            block_reasons.append("data_not_fresh")
+        if not model_accepted:
+            block_reasons.append("model_not_accepted")
+        current_signal.update(
+            {"trade_allowed": False, "block_reasons": block_reasons}
+        )
         summary = {
             "status": "waiting_for_future_data",
             "message": f"No data yet after {start_ts.date()}. Run crypto-sync and rerun crypto-paper-track.",
             "latest_signal": current_signal,
             "data_freshness": freshness,
+            "trade_allowed": False,
+            "model_accepted": model_accepted,
+            "block_reasons": block_reasons,
         }
         write_json(run_dir / "manifest.json", {**manifest, "status": "waiting_for_future_data"})
         write_json(run_dir / "paper_track_summary.json", summary)
@@ -374,6 +477,14 @@ def paper_track_crypto_strategy(
     recent.to_csv(run_dir / "current_signal_recent.csv", index=False)
     strategy.trades.to_csv(run_dir / "paper_trades.csv", index=False)
 
+    block_reasons = [
+        reason
+        for reason, blocked in (
+            ("data_not_fresh", freshness["status"] != "fresh"),
+            ("model_not_accepted", not model_accepted),
+        )
+        if blocked
+    ]
     summary = {
         "status": "tracked",
         "model_run_id": model_run_id,
@@ -390,11 +501,19 @@ def paper_track_crypto_strategy(
         "monthly_dca_final_equity": monthly_dca.metrics["final_equity"],
         "weekly_dca_final_equity": weekly_dca.metrics["final_equity"],
         "closed_trades": strategy.metrics["closed_trades"],
-        "trade_allowed": freshness["status"] == "fresh",
-        "block_reasons": ["data_not_fresh"] if freshness["status"] != "fresh" else [],
+        "trade_allowed": freshness["status"] == "fresh" and model_accepted,
+        "block_reasons": block_reasons,
+        "model_accepted": model_accepted,
+        "external_vintages_verified": external_vintages_verified,
         "data_freshness": freshness,
         "latest_signal": current_signal,
     }
+    current_signal.update(
+        {
+            "trade_allowed": bool(summary["trade_allowed"]),
+            "block_reasons": list(block_reasons),
+        }
+    )
 
     write_json(run_dir / "manifest.json", {**manifest, "status": "tracked"})
     write_json(run_dir / "paper_track_summary.json", summary)

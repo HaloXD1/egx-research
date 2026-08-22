@@ -113,3 +113,26 @@ def test_bundle_tampering_is_detected(tmp_path: Path) -> None:
     bundle_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="hash mismatch"):
         verify_model_bundle(bundle_path)
+
+
+def test_external_model_requires_verified_point_in_time_vintages(
+    tmp_path: Path,
+) -> None:
+    runs, contract = _research_run(tmp_path)
+    summary_path = runs / "research-1" / "crypto_research_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary.update(
+        {
+            "external_data_required": True,
+            "external_vintages_verified": False,
+        }
+    )
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    with pytest.raises(ValueError, match="point-in-time vintages"):
+        freeze_crypto_model(
+            "research-1",
+            runs_root=runs,
+            registry_root=tmp_path / "registry",
+            contract_path=contract,
+            require_clean=False,
+        )

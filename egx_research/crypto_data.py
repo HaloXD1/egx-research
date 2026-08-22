@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
@@ -11,6 +12,7 @@ import requests
 
 from egx_research.crypto_config import CryptoConfig
 from egx_research.utils import ensure_dir, write_json
+from egx_research.reproducibility import sha256_file
 from egx_research.crypto_sources import (
     SOURCE_REGISTRY,
     get_source_api_key,
@@ -1394,6 +1396,8 @@ def _write_feature_quality(config: CryptoConfig, panel: pd.DataFrame, optional_f
             "end_date": str(panel["date"].max().date()) if not panel.empty else "",
             "optional_files_present": {str(path): path.exists() for path in optional_files},
             "options_source_type": options_source_type,
+            "point_in_time_vintage_verified": False,
+            "vintage_caveat": "Historical external-provider values may include later revisions; preserve live snapshots before production promotion.",
         },
     )
 
@@ -1452,6 +1456,49 @@ def _sync_optional_source(
         summary["errors"].append({"source": name, "error": str(exc)})
 
 
+def _preserve_crypto_vintage_snapshot(config: CryptoConfig) -> Path:
+    vintage_root = ensure_dir(Path(config.data.features_dir).parent / "vintages")
+    object_root = ensure_dir(vintage_root / "objects")
+    artifacts = sorted(Path(config.data.raw_dir).glob("*.csv"))
+    artifacts.extend(
+        [
+            Path(config.data.normalized_path),
+            Path(config.data.features_path),
+        ]
+    )
+    rows = []
+    for source in artifacts:
+        if not source.is_file():
+            continue
+        digest = sha256_file(source)
+        object_path = object_root / f"{digest}{source.suffix.lower()}"
+        if not object_path.exists():
+            shutil.copy2(source, object_path)
+        rows.append(
+            {
+                "source_path": str(source),
+                "sha256": digest,
+                "size_bytes": source.stat().st_size,
+                "object_path": str(object_path),
+            }
+        )
+    created_at = datetime.now(UTC)
+    manifest_path = vintage_root / (
+        f"snapshot-{created_at.strftime('%Y%m%dT%H%M%S%fZ')}.json"
+    )
+    write_json(
+        manifest_path,
+        {
+            "schema_version": 1,
+            "created_at": created_at.isoformat(),
+            "purpose": "append-only point-in-time external-data evidence",
+            "historical_revision_warning": "This snapshot proves values available at retrieval time; it does not certify earlier provider vintages.",
+            "artifacts": rows,
+        },
+    )
+    return manifest_path
+
+
 def sync_crypto_data(config: CryptoConfig) -> Path:
     raw_dir = ensure_dir(config.data.raw_dir)
     normalized_dir = ensure_dir(config.data.normalized_dir)
@@ -1482,6 +1529,28 @@ def sync_crypto_data(config: CryptoConfig) -> Path:
 
     panel = build_crypto_feature_panel(config)
     summary["feature_rows"] = int(len(panel))
+    vintage_manifest = _preserve_crypto_vintage_snapshot(config)
+    summary["vintage_snapshot_manifest"] = str(vintage_manifest)
+
+    quality_path = Path(config.data.features_dir) / "BTCUSDT_feature_quality.json"
+    if quality_path.exists():
+        import json
+
+        with quality_path.open("r", encoding="utf-8") as handle:
+            quality = json.load(handle)
+        snapshots = sorted(
+            (Path(config.data.features_dir).parent / "vintages").glob(
+                "snapshot-*.json"
+            )
+        )
+        quality.update(
+            {
+                "latest_vintage_snapshot": str(vintage_manifest),
+                "vintage_snapshot_count": len(snapshots),
+                "point_in_time_vintage_verified": False,
+            }
+        )
+        write_json(quality_path, quality)
 
     env_var = get_source_env_var(config, "options_skew")
     options_source_type = "historical_api" if get_source_api_key("options_skew", env_var) else "limited/proxy"

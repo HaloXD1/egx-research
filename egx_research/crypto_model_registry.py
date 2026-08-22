@@ -14,6 +14,7 @@ DECISION_CODE_PATHS = (
     "egx_research/backtest.py",
     "egx_research/crypto_research.py",
     "egx_research/crypto_strategies.py",
+    "egx_research/crypto_institutional.py",
     "egx_research/nested_validation.py",
 )
 
@@ -66,6 +67,14 @@ def freeze_crypto_model(
         raise ValueError("research run does not prove sealed holdout isolation")
     if require_accepted and summary.get("top_passed_filters") is not True:
         raise ValueError("research candidate did not pass its acceptance filters")
+    if (
+        require_accepted
+        and summary.get("external_data_required") is True
+        and summary.get("external_vintages_verified") is not True
+    ):
+        raise ValueError(
+            "external-data model requires verified point-in-time vintages"
+        )
     run_repository = manifest.get("provenance", {}).get("repository", {})
     if require_clean:
         if run_repository.get("git_dirty") is not False:
