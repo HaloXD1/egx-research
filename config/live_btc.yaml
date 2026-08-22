@@ -31,4 +31,10 @@ safety:
   fail_closed: true
   maximum_data_staleness_minutes: 10
   maximum_cross_venue_divergence_bps: 50.0
+  maximum_feature_age_days: 3
+  maximum_stablecoin_depeg_bps: 100.0
+  maximum_turnover_per_decision: 0.25
+  volatility_target: 0.40
+  maximum_realized_volatility: 1.20
+  maximum_portfolio_drawdown: 0.25
   manual_kill_switch_required: true
