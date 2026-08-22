@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -22,6 +23,11 @@ from egx_research.crypto_model_registry import (
     start_forward_campaign,
 )
 from egx_research.crypto_paper_tracking import paper_track_crypto_strategy
+from egx_research.crypto_promotion import (
+    assess_promotion,
+    promote_campaign,
+    record_forward_event,
+)
 from egx_research.crypto_reporting import generate_crypto_report
 from egx_research.crypto_research import run_crypto_research
 from egx_research.data import ingest_source
@@ -178,6 +184,52 @@ def crypto_forward_start(
         start_date=start_date,
     )
     typer.echo(f"crypto_forward_campaign={campaign}")
+
+
+@app.command("crypto-forward-status")
+def crypto_forward_status(
+    campaign_path: Path = typer.Option(..., "--campaign"),
+    as_of: str = typer.Option(..., "--as-of"),
+) -> None:
+    assessment = assess_promotion(campaign_path, as_of=as_of)
+    typer.echo(json.dumps(assessment.to_dict(), sort_keys=True))
+
+
+@app.command("crypto-forward-record")
+def crypto_forward_record(
+    campaign_path: Path = typer.Option(..., "--campaign"),
+    event_id: str = typer.Option(..., "--event-id"),
+    timestamp: str = typer.Option(..., "--timestamp"),
+    kind: str = typer.Option(..., "--kind"),
+    environment: str = typer.Option(..., "--environment"),
+    payload_json: str = typer.Option("{}", "--payload-json"),
+) -> None:
+    payload = json.loads(payload_json)
+    if not isinstance(payload, dict):
+        raise typer.BadParameter("payload JSON must be an object")
+    path = record_forward_event(
+        campaign_path,
+        event_id=event_id,
+        timestamp=timestamp,
+        kind=kind,
+        environment=environment,
+        payload=payload,
+    )
+    typer.echo(f"crypto_forward_events={path}")
+
+
+@app.command("crypto-forward-promote")
+def crypto_forward_promote(
+    campaign_path: Path = typer.Option(..., "--campaign"),
+    target_stage: str = typer.Option(..., "--target-stage"),
+    as_of: str = typer.Option(..., "--as-of"),
+) -> None:
+    receipt = promote_campaign(
+        campaign_path,
+        target_stage=target_stage,
+        as_of=as_of,
+    )
+    typer.echo(f"crypto_promotion_receipt={receipt}")
 
 
 @app.command("crypto-bottom-score")
