@@ -1,0 +1,13 @@
+venues:
+  - binance_spot
+allowed_quotes:
+  - USDT
+  - USDC
+minimum_history_days: 90
+liquidity_lookback_days: 30
+minimum_median_quote_volume: 1000000.0
+stablecoin_assets:
+  - USDT
+  - USDC
+  - DAI
+delisting_policy: liquidate_on_last_eligible_bar
