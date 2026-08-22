@@ -178,7 +178,7 @@ class OrderStore:
         return [self._record(row) for row in rows]
 
 
-def _state_from_exchange(order: ExchangeOrder) -> str:
+def state_from_exchange(order: ExchangeOrder) -> str:
     mapping = {
         "new": "acknowledged",
         "partially_filled": "partially_filled",
@@ -205,5 +205,5 @@ class OrderManager:
             order = self.adapter.submit_order(request, record.client_order_id)
         except UnknownExecutionState:
             return self.store.transition(request.intent_id, "unknown")
-        state = _state_from_exchange(order)
+        state = state_from_exchange(order)
         return self.store.transition(request.intent_id, state, order)
