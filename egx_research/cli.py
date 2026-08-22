@@ -16,6 +16,11 @@ from egx_research.core_satellite import run_core_satellite_backtest
 from egx_research.crypto_config import load_crypto_config
 from egx_research.crypto_bottom import run_crypto_bottom_score
 from egx_research.crypto_data import sync_crypto_data
+from egx_research.crypto_model_registry import (
+    freeze_crypto_model,
+    register_challenger,
+    start_forward_campaign,
+)
 from egx_research.crypto_paper_tracking import paper_track_crypto_strategy
 from egx_research.crypto_reporting import generate_crypto_report
 from egx_research.crypto_research import run_crypto_research
@@ -146,6 +151,33 @@ def crypto_report(
 ) -> None:
     report_path = generate_crypto_report(run_id)
     typer.echo(f"crypto_report={report_path}")
+
+
+@app.command("crypto-model-freeze")
+def crypto_model_freeze(
+    research_run_id: str = typer.Option(..., "--research-run-id"),
+    contract_path: Path = typer.Option(Path("config/live_btc.yaml"), "--contract"),
+) -> None:
+    bundle = freeze_crypto_model(
+        research_run_id,
+        contract_path=contract_path,
+    )
+    register_challenger(bundle)
+    typer.echo(f"crypto_model_bundle={bundle}")
+
+
+@app.command("crypto-forward-start")
+def crypto_forward_start(
+    bundle_path: Path = typer.Option(..., "--bundle"),
+    campaign_id: str = typer.Option(..., "--campaign-id"),
+    start_date: str = typer.Option(..., "--start-date"),
+) -> None:
+    campaign = start_forward_campaign(
+        bundle_path,
+        campaign_id=campaign_id,
+        start_date=start_date,
+    )
+    typer.echo(f"crypto_forward_campaign={campaign}")
 
 
 @app.command("crypto-bottom-score")
